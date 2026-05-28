@@ -108,6 +108,7 @@ sonic = [
     "unitree-sdk2py",
     "xrobotoolkit-sdk",
     "decoupled-wbc[full]",
+    "televuer",
 ]
 
 [tool.uv]
