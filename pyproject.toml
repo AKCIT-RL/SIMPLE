@@ -109,6 +109,7 @@ sonic = [
     "xrobotoolkit-sdk",
     "decoupled-wbc[full]",
     "televuer",
+    "qpsolvers[open_source_solvers]",
 ]
 
 [tool.uv]

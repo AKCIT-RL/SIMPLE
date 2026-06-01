@@ -73,6 +73,8 @@ ENV SETUPTOOLS_SCM_PRETEND_VERSION=0.7.7
 ENV OMNI_KIT_ACCEPT_EULA=Y
 
 RUN --mount=type=cache,target=/workspace/.uv-cache \
+    uv venv .venv && \
+    .venv/bin/pip install setuptools && \
     GIT_LFS_SKIP_SMUDGE=1 uv sync --group lerobot --index-strategy unsafe-best-match && \
     rm -rf /tmp/* /var/tmp/*
 
@@ -139,7 +141,8 @@ RUN --mount=type=cache,target=/workspace/.uv-cache \
             -e third_party/gear_sonic \
             -e third_party/decoupled_wbc \
             -e third_party/unitree_sdk2_python \
-            tyro pin pin-pink pyyaml onnxruntime loguru termcolor qpsolvers ; \
+            -e third_party/televuer \
+            tyro pin pin-pink pyyaml onnxruntime loguru termcolor "qpsolvers[open_source_solvers]" ; \
     fi && \
     rm -rf /tmp/* /var/tmp/*
 
