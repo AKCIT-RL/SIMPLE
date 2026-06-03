@@ -48,6 +48,44 @@ def _capture_body_q(robot: G1Sonic) -> np.ndarray:
     return robot.mjData.qpos[robot.body_joint_index + robot.qpos_offset - 1].copy()
 
 
+def _configure_minimal_preview_layout(task: Any) -> None:
+    # Keep only tables + target object in layout generation.
+    for key in ("container", "distractors", "articulated"):
+        if hasattr(task, "dr_cfgs"):
+            task.dr_cfgs.pop(key, None)
+        if hasattr(task, "dr") and hasattr(task.dr, "randomizers"):
+            task.dr.randomizers.pop(key, None)
+
+
+def _enforce_target_override(task: Any, target: str) -> None:
+    if ":" not in target:
+        raise typer.BadParameter(
+            "Invalid --target format. Expected <res_id:obj_id>, e.g. graspnet1b:12"
+        )
+    res_id, obj_id = target.split(":", maxsplit=1)
+
+    target_cfg = getattr(task, "dr_cfgs", {}).get("target")
+    if target_cfg is not None and hasattr(target_cfg, "asset_id"):
+        target_cfg.asset_id = target
+
+    randomizers = getattr(getattr(task, "dr", None), "randomizers", {})
+    target_randomizer = randomizers.get("target") if isinstance(randomizers, dict) else None
+    if target_randomizer is not None:
+        if hasattr(target_randomizer, "cfg") and hasattr(target_randomizer.cfg, "asset_id"):
+            target_randomizer.cfg.asset_id = target
+        if hasattr(target_randomizer, "res_id"):
+            target_randomizer.res_id = res_id
+        if hasattr(target_randomizer, "obj_id"):
+            target_randomizer.obj_id = obj_id
+
+
+def _configure_visualization_only_task(task: Any) -> None:
+    # Some teleop tasks assume container/distractors in compute_reward/check_success.
+    # For preview-only runs we disable task-specific episode logic.
+    task.compute_reward = lambda info, *args, **kwargs: 0.0
+    task.check_success = lambda info, *args, **kwargs: False
+
+
 def _print_scenario_info(
     sonic_env: "SonicLocoManipEnv",
     env_id: str,
@@ -141,6 +179,10 @@ def main(
     headless: bool = False,
 ) -> None:
     assert step_hz > 0.0, "step_hz must be > 0"
+    if target is None:
+        raise typer.BadParameter(
+            "Pass --target <res_id:obj_id>. Example: --target graspnet1b:0"
+        )
 
     sonic_config = _load_sonic_config()
 
@@ -154,12 +196,16 @@ def main(
         max_episode_steps=max_episode_steps,
         sonic_config=sonic_config,
         target=target,
+        target_object=target,
         dr_level=dr_level,
     )
     sonic_env: "SonicLocoManipEnv" = env.unwrapped  # type: ignore
     task = sonic_env.task
     robot = task.robot
     assert isinstance(robot, G1Sonic)
+    _enforce_target_override(task, target)
+    _configure_minimal_preview_layout(task)
+    _configure_visualization_only_task(task)
 
     control_dt = 1.0 / step_hz
 
