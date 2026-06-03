@@ -74,7 +74,7 @@ ENV OMNI_KIT_ACCEPT_EULA=Y
 
 RUN --mount=type=cache,target=/workspace/.uv-cache \
     uv venv .venv && \
-    .venv/bin/pip install setuptools && \
+    uv pip install setuptools && \
     GIT_LFS_SKIP_SMUDGE=1 uv sync --group lerobot --index-strategy unsafe-best-match && \
     rm -rf /tmp/* /var/tmp/*
 
