@@ -181,7 +181,8 @@ def main(
     num_episodes: Annotated[int, typer.Option()] = 100,
     shard_size: Annotated[int, typer.Option()] = 100,
     dr_level: Annotated[int, typer.Option()] = 0,
-    record: Annotated[bool, typer.Option()] = False
+    record: Annotated[bool, typer.Option()] = False,
+    industrial_material: Annotated[bool, typer.Option()] = False,
 ):
     assert sim_mode in ["mujoco"], f"Invalid sim_mode {sim_mode} for teleop."
     sim_cnt = 0
@@ -197,7 +198,8 @@ def main(
         headless=headless,
         max_episode_steps=max_episode_steps,
         sonic_config=sonic_config,
-        target=target
+        target=target,
+        industrial_material=industrial_material,
     )
     sonic_env: SonicLocoManipEnv = env.unwrapped  # type: ignore
     task = sonic_env.task
@@ -217,10 +219,8 @@ def main(
     control_dt = control_decimal * robot.sim_dt  # = 0.02 s (50 Hz)
 
     def _on_episode_reset():
-        """In recording mode, reset the WBC pipeline to a consistent initial pose,
-        skip elastic band drop, and engage the RL policy immediately."""
-        if not record:
-            return
+        """Reset the WBC pipeline to a consistent initial pose,
+        skip elastic band drop, and engage the RL policy immediately for all modes."""
         if robot.elastic_band is not None:
             robot.elastic_band.enable = False
         agent._dropping = False

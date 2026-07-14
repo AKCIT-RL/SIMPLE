@@ -39,7 +39,9 @@ def _estimate_stable_z_from_obj(obj_path: str, default: float = 0.12) -> float:
 
     if not z_values:
         return default
-    return max(default, -min(z_values))
+    
+    # Do not force a default height if the geometric min is perfectly flush (0.0).
+    return -min(z_values)
 
 
 class TotesAsset(Asset, SemanticAnnotated, SpatialAnnotated):

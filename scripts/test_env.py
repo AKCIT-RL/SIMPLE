@@ -32,6 +32,15 @@ def main(
     max_episode_steps: Annotated[int, typer.Option()] = 6000,
     save_dir: Annotated[str, typer.Option()] = "data/output",
 ):
+    try:
+        import tyro
+        from gear_sonic.utils.mujoco_sim.configs import SimLoopConfig
+        config = tyro.cli(SimLoopConfig, config=(tyro.conf.ConsolidateSubcommandArgs,), args=[])
+        sonic_config = config.load_wbc_yaml()
+        sonic_config["ENV_NAME"] = "simple"
+    except Exception:
+        sonic_config = None
+
     env = gym.make(
         env_id,
         task=task,
@@ -42,6 +51,7 @@ def main(
         sim_mode=sim_mode,
         headless=headless,
         webrtc=webrtc,
+        sonic_config=sonic_config,
         max_episode_steps=max_episode_steps,
     )
 

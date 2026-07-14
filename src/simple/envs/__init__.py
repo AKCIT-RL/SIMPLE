@@ -449,6 +449,21 @@ register(
     entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
     kwargs={"task":"g1_wholebody_open_trash_can_teleop"},
 )
+register(
+    id="simple/G1IndustrialScrewToToteTeleop-v0",
+    entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
+    kwargs={"task":"g1_industrial_screw_to_tote_teleop"},
+)
+register(
+    id="simple/G1IndustrialToteToRackTeleop-v0",
+    entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
+    kwargs={"task":"g1_industrial_tote_to_rack_teleop"},
+)
+register(
+    id="simple/G1IndustrialScrewdriverToToteTeleop-v0",
+    entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
+    kwargs={"task":"g1_industrial_screwdriver_to_tote_teleop"},
+)
 
 
 # def task_register(task):

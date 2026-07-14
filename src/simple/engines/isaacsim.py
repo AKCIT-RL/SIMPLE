@@ -38,6 +38,7 @@ import simple
 import simple.scenes
 # from simple.core import sensors
 import simple.sensors
+from simple.scenes.warehouse import WarehouseSuite
 from simple.core.actor import ObjectActor, VisualFrame, VisualGrasp, ArticulatedObjectActor
 from simple.core.robot import Robot
 from simple.core.simulator import Simulator
@@ -339,88 +340,115 @@ class IsaacSimSimulator(Simulator):
                 # scene.GetAttribute("xformOp:translate").Set((0, 0, 0))
 
         scene = self.task.layout.scene
-        assert isinstance(scene, HssdSuite), "not supported scene type yet"
-
         scene_prim_path = f"{self.SCENE_PRIM_PATH}/s_{scene.uid.replace(':', '_')}"
-        surface_prim_path = scene.conf["surface"]["prim_path"].replace("/World", scene_prim_path)
-        
-        has_surface2 = "surface2" in scene.conf and scene.conf["surface2"] is not None
-        surface2_prim_path = None
-        if has_surface2:
-            surface2_prim_path = scene.conf["surface2"]["prim_path"].replace("/World", scene_prim_path)
 
-        if scene_uid not in self.scenes:
-            # self.add_scene(move_surface_to_origin)
-            if isinstance(scene, simple.scenes.ShowHouse):
-                raise NotImplementedError("ShowHouse scene is not implemented yet.")
+        if isinstance(scene, WarehouseSuite):
+            if scene_uid not in self.scenes:
+                from omni.isaac.core.utils.nucleus import get_assets_root_path
+                assets_root_path = get_assets_root_path()
+                if assets_root_path is None:
+                    env_url = scene.data_dir
+                else:
+                    env_url = assets_root_path + "/Isaac/Environments/Simple_Warehouse/warehouse.usd"
+                
+                try:
+                    isaacsim_stage.add_reference_to_stage(usd_path=env_url, prim_path=scene_prim_path)
+                except Exception as e:
+                    print(f"Warning: could not load warehouse usd: {e}")
+                
+                scene_prim = self.world.stage.GetPrimAtPath(scene_prim_path)
+                self.scenes[scene.uid] = [scene_prim, {"position": np.array([0, 0, 0])}]
+            else:
+                scene_prim = self.scenes[scene.uid][0]
+
+            scene_prim.GetAttribute("visibility").Set("visible")
             
-            #### START adding HSSD scenes ####
-            from pxr import UsdGeom, UsdPhysics
-
-            # data_dir = resolve_data_path
-            try:
-                data_dir = resolve_data_path(scene.data_dir, auto_download=True) #f"scenes/hssd/{scene_name}" 
-            except FileNotFoundError:
-                # put download logic into SceneManager
-                from simple.scenes import SceneManager
-                SceneManager.get(scene.uid.split(":")[0]).load(scene.uid)
-                data_dir = resolve_data_path(scene.data_dir)
-
-            env_url = os.path.abspath(f"{data_dir}/{scene.name}.usd")
-            isaacsim_stage.add_reference_to_stage(usd_path=env_url, prim_path=scene_prim_path)
-            scene_prim = self.world.stage.GetPrimAtPath(scene_prim_path)
-
-            surface_prim = self.world.stage.GetPrimAtPath(surface_prim_path)
-            surface_prim.GetAttribute("visibility").Set("invisible")
-
-            if has_surface2:
-                surface2_prim = self.world.stage.GetPrimAtPath(surface2_prim_path)
-                surface2_prim.GetAttribute("visibility").Set("invisible")
-
-            if not scene_prim.GetAttribute("xformOp:translate"):
-                UsdGeom.Xformable(scene_prim).AddTranslateOp() # type: ignore
-            if not scene_prim.GetAttribute("xformOp:rotateXYZ"):
-                UsdGeom.Xformable(scene_prim).AddRotateXYZOp() # type: ignore
-            if not scene_prim.GetAttribute("xformOp:scale"):
-                UsdGeom.Xformable(scene_prim).AddScaleOp() # type: ignore
-
-            # scene: HssdSuite = self.task.layout.scene
-            scene_prim.GetAttribute("xformOp:rotateXYZ").Set(tuple(scene.center_orientation))
-
-            scale = scene.conf["scale"]
-            scene_prim.GetAttribute("xformOp:scale").Set((scale, scale, scale))
-
-            surface_obb = self.calc_surface_center(surface_prim)
-            self.scenes[scene.uid] = [scene_prim, surface_obb] # hssd_env # store it
         else:
-            scene_prim = self.world.stage.GetPrimAtPath(scene_prim_path)
-            surface_prim = self.world.stage.GetPrimAtPath(surface_prim_path)
-            surface_prim.GetAttribute("visibility").Set("invisible")
-            self.scenes[scene.uid][0] = scene_prim # hssd_env # store it
-            surface_obb = self.scenes[scene.uid][1]
+            assert isinstance(scene, HssdSuite), "not supported scene type yet"
 
-            scale = scene.conf["scale"]
-            scene_prim.GetAttribute("xformOp:scale").Set((scale, scale, scale))
-            scene_prim.GetAttribute("xformOp:translate").Set((0,0,0))
-            scene_prim.GetAttribute("xformOp:rotateXYZ").Set(tuple(scene.center_orientation))
-            surface_obb = self.calc_surface_center(surface_prim)
-
+            surface_prim_path = scene.conf["surface"]["prim_path"].replace("/World", scene_prim_path)
+            
+            has_surface2 = "surface2" in scene.conf and scene.conf["surface2"] is not None
+            surface2_prim_path = None
             if has_surface2:
-                surface2_prim = self.world.stage.GetPrimAtPath(surface2_prim_path)
-                surface2_prim.GetAttribute("visibility").Set("invisible")
+                surface2_prim_path = scene.conf["surface2"]["prim_path"].replace("/World", scene_prim_path)
 
-        ceiling = scene_prim.GetPrimAtPath(f"{scene_prim_path}/ceilings")
-        ceiling.GetAttribute("visibility").Set("visible") # hide ceiling for better visualization
+            if scene_uid not in self.scenes:
+                # self.add_scene(move_surface_to_origin)
+                if isinstance(scene, simple.scenes.ShowHouse):
+                    raise NotImplementedError("ShowHouse scene is not implemented yet.")
+                
+                #### START adding HSSD scenes ####
+                from pxr import UsdGeom, UsdPhysics
 
-        if move_surface_to_origin:
-            surface_center_position = - surface_obb["position"] + \
-                np.array(scene.center_offset, dtype=np.float32) #self._config.hssd.center_offset
-            if self.task.robot.uid == "g1_sonic":
-                # FIXME backward compatibility: robot touches the ground
-                surface_center_position[2] = 0.0 
-            scene_prim.GetAttribute("xformOp:translate").Set(tuple(surface_center_position))
+                # data_dir = resolve_data_path
+                try:
+                    data_dir = resolve_data_path(scene.data_dir, auto_download=True) #f"scenes/hssd/{scene_name}" 
+                except FileNotFoundError:
+                    # put download logic into SceneManager
+                    from simple.scenes import SceneManager
+                    SceneManager.get(scene.uid.split(":")[0]).load(scene.uid)
+                    data_dir = resolve_data_path(scene.data_dir)
 
-        scene_prim.GetAttribute("visibility").Set("visible")
+                env_url = os.path.abspath(f"{data_dir}/{scene.name}.usd")
+                isaacsim_stage.add_reference_to_stage(usd_path=env_url, prim_path=scene_prim_path)
+                scene_prim = self.world.stage.GetPrimAtPath(scene_prim_path)
+
+                surface_prim = self.world.stage.GetPrimAtPath(surface_prim_path)
+                surface_prim.GetAttribute("visibility").Set("invisible")
+
+                if has_surface2:
+                    surface2_prim = self.world.stage.GetPrimAtPath(surface2_prim_path)
+                    surface2_prim.GetAttribute("visibility").Set("invisible")
+
+                if not scene_prim.GetAttribute("xformOp:translate"):
+                    UsdGeom.Xformable(scene_prim).AddTranslateOp() # type: ignore
+                if not scene_prim.GetAttribute("xformOp:rotateXYZ"):
+                    UsdGeom.Xformable(scene_prim).AddRotateXYZOp() # type: ignore
+                if not scene_prim.GetAttribute("xformOp:scale"):
+                    UsdGeom.Xformable(scene_prim).AddScaleOp() # type: ignore
+
+                # scene: HssdSuite = self.task.layout.scene
+                scene_prim.GetAttribute("xformOp:rotateXYZ").Set(tuple(scene.center_orientation))
+
+                scale = scene.conf["scale"]
+                scene_prim.GetAttribute("xformOp:scale").Set((scale, scale, scale))
+
+                surface_obb = self.calc_surface_center(surface_prim)
+                self.scenes[scene.uid] = [scene_prim, surface_obb] # hssd_env # store it
+            else:
+                scene_prim = self.world.stage.GetPrimAtPath(scene_prim_path)
+                surface_prim = self.world.stage.GetPrimAtPath(surface_prim_path)
+                surface_prim.GetAttribute("visibility").Set("invisible")
+                self.scenes[scene.uid][0] = scene_prim # hssd_env # store it
+                surface_obb = self.scenes[scene.uid][1]
+
+                scale = scene.conf["scale"]
+                scene_prim.GetAttribute("xformOp:scale").Set((scale, scale, scale))
+                scene_prim.GetAttribute("xformOp:translate").Set((0,0,0))
+                scene_prim.GetAttribute("xformOp:rotateXYZ").Set(tuple(scene.center_orientation))
+                surface_obb = self.calc_surface_center(surface_prim)
+
+                if has_surface2:
+                    surface2_prim = self.world.stage.GetPrimAtPath(surface2_prim_path)
+                    surface2_prim.GetAttribute("visibility").Set("invisible")
+
+            try:
+                ceiling = scene_prim.GetPrimAtPath(f"{scene_prim_path}/ceilings")
+                if ceiling:
+                    ceiling.GetAttribute("visibility").Set("visible") # hide ceiling for better visualization
+            except Exception as e:
+                print(f"Warning: could not set ceiling visibility for {scene_prim_path}: {e}")
+
+            if move_surface_to_origin:
+                surface_center_position = - surface_obb["position"] + \
+                    np.array(scene.center_offset, dtype=np.float32) #self._config.hssd.center_offset
+                if self.task.robot.uid == "g1_sonic":
+                    # FIXME backward compatibility: robot touches the ground
+                    surface_center_position[2] = 0.0 
+                scene_prim.GetAttribute("xformOp:translate").Set(tuple(surface_center_position))
+
+            scene_prim.GetAttribute("visibility").Set("visible")
 
         table_box = self.task.layout.actors.get("table")
         if table_box is not None:
@@ -505,11 +533,14 @@ class IsaacSimSimulator(Simulator):
 
         obj_xform = XFormPrim(prim_path=object_prim_path)
         geom_prim_path = f'{object_prim_path}/Meshes'
-        obj_geom = GeometryPrim(prim_path=geom_prim_path)
-        obj_rigid = RigidPrim(prim_path=geom_prim_path)
-        obj_rigid.disable_rigid_body_physics()
-        obj_collision_geom = GeometryPrim(f"{geom_prim_path}/collision")
-        obj_collision_geom.set_collision_enabled(False)
+        try:
+            obj_geom = GeometryPrim(prim_path=geom_prim_path)
+            obj_rigid = RigidPrim(prim_path=geom_prim_path)
+            obj_rigid.disable_rigid_body_physics()
+            obj_collision_geom = GeometryPrim(f"{geom_prim_path}/collision")
+            obj_collision_geom.set_collision_enabled(False)
+        except Exception as e:
+            print(f"Warning: skipped processing {geom_prim_path} for {obj_id} due to: {e}")
 
         usd_prim = isaacsim_prims.get_prim_at_path(object_prim_path)
         semantics=[("prim", f"{obj_id}")]
@@ -988,12 +1019,36 @@ class IsaacSimSimulator(Simulator):
         UsdPhysics.MeshCollisionAPI.Apply(prim)
 
         mat_info = getattr(table_box, 'material', None)
-        if mat_info is None:
-            return
-        raw_path = mat_info['path']
-        if not os.path.isabs(raw_path):
-            raw_path = resolve_data_path(raw_path.removeprefix("data/"), auto_download=True)
         created = [None]
-        create_mdl_material(stage, raw_path, mat_info['name'], lambda p: created.__setitem__(0, p))
+        if mat_info is not None:
+            raw_path = mat_info['path']
+            if not os.path.isabs(raw_path):
+                raw_path = resolve_data_path(raw_path.removeprefix("data/"), auto_download=True)
+            try:
+                create_mdl_material(stage, raw_path, mat_info['name'], lambda p: created.__setitem__(0, p))
+            except Exception as e:
+                print(f"Warning: failed to load material {raw_path}: {e}")
+        
+        if created[0] is None:
+            # Last-resort fallback so the table never renders as an opaque white
+            # cube when no material was resolved (missing/failed MDL, no DR material
+            # assigned, etc). This applies to any scene type, not just warehouse -
+            # scene/task-specific looks should be set via MaterialDRCfg instead.
+            mtl_created_list = []
+            omni.kit.commands.execute("CreateAndBindMdlMaterialFromLibrary",
+                mdl_name="OmniPBR.mdl", mtl_name="OmniPBR", mtl_created_list=mtl_created_list)
+            if mtl_created_list:
+                mtl_path = mtl_created_list[0]
+                mtl_prim = stage.GetPrimAtPath(mtl_path)
+                created[0] = mtl_prim
+                mtl = UsdShade.Material(mtl_prim)
+                for child in mtl_prim.GetChildren():
+                    if child.IsA(UsdShade.Shader):
+                        shader = UsdShade.Shader(child)
+                        shader.CreateInput("diffuse_color_constant", Sdf.ValueTypeNames.Color3f).Set((0.5, 0.5, 0.5))
+                        shader.CreateInput("metallic_constant", Sdf.ValueTypeNames.Float).Set(0.0)
+                        shader.CreateInput("reflection_roughness_constant", Sdf.ValueTypeNames.Float).Set(0.5)
+                        break
+
         if created[0] is not None:
             UsdShade.MaterialBindingAPI.Apply(prim).Bind(UsdShade.Material(created[0]))
