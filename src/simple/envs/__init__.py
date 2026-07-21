@@ -464,6 +464,11 @@ register(
     entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
     kwargs={"task":"g1_industrial_screwdriver_to_tote_teleop"},
 )
+register(
+    id="simple/G1IndustrialSortingTeleop-v0",
+    entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
+    kwargs={"task":"g1_industrial_sorting_teleop"},
+)
 
 
 # def task_register(task):

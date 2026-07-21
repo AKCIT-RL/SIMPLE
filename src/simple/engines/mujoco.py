@@ -239,7 +239,11 @@ class MujocoSimulator(Simulator):
         self.joints, self.actuators=self.task.robot.setup_control(self.mjData, self.mjModel, mjSpec=self.mjSpec)
         
         
-        if self.articulated_object_joints is not None:
+        # Only initialise articulate joints when the scene actually has an
+        # articulated object with joints under the canonical "articulated" key.
+        # Static furniture is also attached via the articulated path (0 joints,
+        # keyed "furniture_*"), so guard against assuming an "articulated" actor.
+        if self.articulated_object_joints and "articulated" in self.task.layout.actors:
             articulate_joint_qpos = self.task.layout.actors["articulated"].asset.articulate_init_joint_qpos
             if articulate_joint_qpos is not None:
                 for joint_name, qpos in articulate_joint_qpos.items():
@@ -318,8 +322,10 @@ class MujocoSimulator(Simulator):
                 # total mass 0.1 helps preventing slipping
                 mass=0.1/num_convex, 
                 # rubber on rough ground: large static, sliding and torisonal friction
-                friction=[0.8, 0.05, 0.005],  
-                rgba=[1, 1, 1, 1],
+                friction=[0.8, 0.05, 0.005],
+                # per-asset tint when provided (e.g. bin_b04_red/bin_b04_blue);
+                # default stays the historical plain white
+                rgba=getattr(actor.asset, "rgba", None) or [1, 1, 1, 1],
                 # stiff contact and no oscillation
                 solref = [0.005, 2]
             )

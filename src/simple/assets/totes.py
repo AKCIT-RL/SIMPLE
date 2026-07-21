@@ -20,6 +20,19 @@ from simple.core.object import SemanticAnnotated, SpatialAnnotated
 
 Totes_Names = {
     0: "bin_b04",
+    1: "bin_b04_red",
+    2: "bin_b04_blue",
+}
+
+# Color variants reuse the bin_b04 meshes/USD on disk but carry a distinct
+# uid/label (so multiple totes can coexist in one MuJoCo scene — the engine
+# names bodies by asset.label, and duplicates fail to compile) and a fixed RGBA
+# tint the MuJoCo engine applies to the object geoms (see _build_object).
+# NOTE: the tint is MuJoCo-side only; the Isaac Sim replay renders the bin_b04
+# USD's own material (color override there is a render-stage concern).
+Totes_Variants: dict[str, dict[str, Any]] = {
+    "bin_b04_red": {"base": "bin_b04", "rgba": [0.80, 0.10, 0.10, 1.0]},
+    "bin_b04_blue": {"base": "bin_b04", "rgba": [0.10, 0.25, 0.85, 1.0]},
 }
 
 
@@ -55,6 +68,7 @@ class TotesAsset(Asset, SemanticAnnotated, SpatialAnnotated):
         collision_meshes_mujoco: list[str],
         description: str | None = None,
         stable_poses: np.ndarray | None = None,
+        rgba: list[float] | None = None,
     ) -> None:
         super().__init__(
             uid=uid,
@@ -65,6 +79,9 @@ class TotesAsset(Asset, SemanticAnnotated, SpatialAnnotated):
         self.label = label
         self.name = name
         self.description = description
+        # Optional MuJoCo geom tint; the engine's _build_object reads asset.rgba
+        # when present (color variants like bin_b04_red set this).
+        self.rgba = rgba
         self.stable_poses = (
             stable_poses if stable_poses is not None else np.array([[0, 0, 0.12, 1, 0, 0, 0]])
         )
@@ -103,7 +120,11 @@ class TotesAssetManager(AssetManager):
 
     def load(self, asset_id: str) -> Asset:
         name = self._resolve_name(asset_id)
-        base_dir = os.path.join(self.src_dir, name)
+        # Color variants resolve to their base folder on disk (same meshes/USD);
+        # only uid/label and the rgba tint differ.
+        variant = Totes_Variants.get(name)
+        folder = variant["base"] if variant is not None else name
+        base_dir = os.path.join(self.src_dir, folder)
         assert os.path.isdir(base_dir), f"Totes asset folder not found: {base_dir}"
 
         collision_dir = os.path.join(base_dir, "MJCF", "collision")
@@ -113,7 +134,8 @@ class TotesAssetManager(AssetManager):
         visual_mesh = os.path.join(base_dir, "MJCF", "visuals", "Bin_B04_01.obj")
         assert os.path.exists(visual_mesh), f"Visual mesh not found: {visual_mesh}"
 
-        usd_path = os.path.join(base_dir, f"{name}.usd")
+        # The on-disk USD is named after the base folder (variants share it).
+        usd_path = os.path.join(base_dir, f"{folder}.usd")
         assert os.path.exists(usd_path), f"USD file not found: {usd_path}"
 
         stable_z = _estimate_stable_z_from_obj(visual_mesh, default=0.12)
@@ -128,11 +150,18 @@ class TotesAssetManager(AssetManager):
             collision_meshes_mujoco=collision_meshes_mujoco,
             description="NVIDIA SimReady tote bin asset",
             stable_poses=stable_poses,
+            rgba=variant["rgba"] if variant is not None else None,
         )
 
     def sample(self, exclude: list[str] | None = None) -> Asset:
         exclude_set = set(str(e) for e in (exclude or []))
-        candidates = [name for name in Totes_Names.values() if name not in exclude_set]
+        # Random sampling only draws base totes; color variants are task-specific
+        # and must be requested explicitly by name.
+        candidates = [
+            name
+            for name in Totes_Names.values()
+            if name not in exclude_set and name not in Totes_Variants
+        ]
         if not candidates:
             raise ValueError("No tote assets available after exclusions.")
         return self.load(random.choice(candidates))
