@@ -194,6 +194,8 @@ Para a renderização: renderize e **meça pixels**. Salve o PNG e olhe.
 | Robô não responde ao VR | Robô fora do spawn canônico | task |
 | "Reset em loop" | Combo de reset colide com o gesto de agarrar (squeeze) | binding do VR |
 | Comportamento inconsistente entre episódios | Objetos de padding abaixo do piso **colidindo** com o plano infinito e sendo ejetados a ~140 m/s | task |
+| Robô manipula objetos que sumiram (só no render) | Poses gravadas resolvidas por `asset.name`, que **repete** entre cópias do mesmo asset; as juntas são `{label}_joint` | render CLI |
+| Todos os episódios renderizados com o mesmo prompt | Prompt lido de `tasks.jsonl[0]` e congelado na criação do exporter | render CLI |
 | Segfault ao montar cena | Arena do MuJoCo estourou | `mjSpec.memory` |
 | Segfault ao colorir objeto | Bind em *instance proxy* | de-instanciar antes |
 | Episódio não reseta no sucesso | Rodou sem `--record` | CLI |

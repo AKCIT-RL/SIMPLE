@@ -167,6 +167,8 @@ MuJoCo, material OmniPBR vinculado no Isaac.
 |---|---|
 | Robô girava 180° ao estabilizar | `navigate_cmd[3]` é yaw **absoluto**; `DEFAULT_NAV_CMD` mandava 0 |
 | Comportamento inconsistente entre episódios | Objetos de padding em `z=-10` **colidiam** com o chão (plano infinito = semi-espaço) e eram ejetados a ~143 m/s pelo workspace |
+| Robô manipulando objetos invisíveis no render | Poses gravadas mapeadas por `asset.name` — que **repete** entre cópias (`metal_screw`×4) — em vez do label da junta; 7 dos 10 objetos recebiam a pose errada, e o padding estacionado sobrescrevia peças visíveis |
+| Prompt igual em todo episódio renderizado | `tasks.jsonl[0]` congelado na criação do exporter, em vez do prompt gravado por episódio |
 | Segfault ao montar a cena | Arena do MuJoCo estourava → `mjSpec.memory = 256 MB` |
 | Episódio não resetava no sucesso | Rodou sem `--record` |
 | Prompt errado no dataset | `frame["task"]` é rejeitado pelo `validate_frame`; o certo é `exporter.task` |
