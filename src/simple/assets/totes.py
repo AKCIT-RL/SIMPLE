@@ -31,8 +31,8 @@ Totes_Names = {
 # NOTE: the tint is MuJoCo-side only; the Isaac Sim replay renders the bin_b04
 # USD's own material (color override there is a render-stage concern).
 Totes_Variants: dict[str, dict[str, Any]] = {
-    "bin_b04_red": {"base": "bin_b04", "rgba": [0.80, 0.10, 0.10, 1.0]},
-    "bin_b04_blue": {"base": "bin_b04", "rgba": [0.10, 0.25, 0.85, 1.0]},
+    "bin_b04_red": {"base": "bin_b04", "rgba": [0.90, 0.02, 0.02, 1.0]},
+    "bin_b04_blue": {"base": "bin_b04", "rgba": [0.02, 0.08, 0.90, 1.0]},
 }
 
 
@@ -134,7 +134,10 @@ class TotesAssetManager(AssetManager):
         visual_mesh = os.path.join(base_dir, "MJCF", "visuals", "Bin_B04_01.obj")
         assert os.path.exists(visual_mesh), f"Visual mesh not found: {visual_mesh}"
 
-        # The on-disk USD is named after the base folder (variants share it).
+        # All variants share the base USD: the colour is NOT in the asset. Both
+        # engines take it from `rgba` below — MuJoCo as a geom tint, Isaac by
+        # binding an OmniPBR material (see IsaacSimSimulator._bind_color_material;
+        # colouring the bin's own material has no effect on the render).
         usd_path = os.path.join(base_dir, f"{folder}.usd")
         assert os.path.exists(usd_path), f"USD file not found: {usd_path}"
 

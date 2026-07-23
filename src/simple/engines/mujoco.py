@@ -102,7 +102,12 @@ class MujocoSimulator(Simulator):
         # joint_state = np.array([joint.qpos[0] for joint in self.joints])
         joint_state = self.task.robot.get_robot_qpos()
         robot_position = np.round(self.mjData.qpos[:7], 4)
-        if self.articulated_object_joints is not None:
+        # Only real articulated objects expose `articulate_*` joints/bodies.
+        # Static furniture also rides the articulated actor path (0 joints), which
+        # leaves this list EMPTY but not None — the old `is not None` check then
+        # fell through to `mjData.body("articulate_base")` and raised
+        # "Invalid name 'articulate_base'". Same guard as _setup_scene.
+        if self.articulated_object_joints:
             articulated_joints_state = {}
             for articulate_joint in self.articulated_object_joints:
                 # articulated_joints_state[articulate_joint] = self.mjData.joint(articulate_joint).qpos[0]
@@ -138,6 +143,13 @@ class MujocoSimulator(Simulator):
         mjSpec.option.integrator = mujoco.mjtIntegrator.mjINT_IMPLICITFAST
         mjSpec.option.cone = mujoco.mjtCone.mjCONE_ELLIPTIC
         mjSpec.option.noslip_iterations = 2
+        # Arena for contacts/constraints. MuJoCo's automatic estimate is sized
+        # from a heuristic and overflows ("Insufficient arena memory for the
+        # number of constraints generated" -> segfault) on scenes that combine
+        # mesh-collision furniture with many convex-hull objects (e.g. the
+        # industrial sorting task: 3 furniture pieces + 2 totes + up to 8 parts,
+        # 16 hulls each). 256 MB is ample and costs only address space.
+        mjSpec.memory = 256 * 1024 * 1024
         
         mj_worldbody = mjSpec.worldbody
         
@@ -326,6 +338,14 @@ class MujocoSimulator(Simulator):
                 # per-asset tint when provided (e.g. bin_b04_red/bin_b04_blue);
                 # default stays the historical plain white
                 rgba=getattr(actor.asset, "rgba", None) or [1, 1, 1, 1],
+                # Padding/placeholder instances opt out of collision entirely.
+                # They are parked below the floor to keep a constant object count
+                # in the recorded observations, but the ground plane is an
+                # INFINITE half-space, so a colliding body parked under it is
+                # deeply penetrating and gets ejected upward at ~140 m/s straight
+                # through the workspace.
+                contype=0 if getattr(actor.asset, "no_collision", False) else 1,
+                conaffinity=0 if getattr(actor.asset, "no_collision", False) else 1,
                 # stiff contact and no oscillation
                 solref = [0.005, 2]
             )

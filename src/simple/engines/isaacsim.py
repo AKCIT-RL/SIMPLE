@@ -281,8 +281,15 @@ class IsaacSimSimulator(Simulator):
                 continue
             
             if isinstance(obj_info, ArticulatedObjectActor):
-                self.add_articulated_object(obj_name, obj_info)
-                
+                # Zero-joint props (warehouse furniture) ride the articulated
+                # actor type so MuJoCo can attach their whole MJCF at a frame,
+                # but they are NOT articulations: render them as plain
+                # referenced prims instead of SingleArticulation.
+                if getattr(obj_info.asset, "static", False):
+                    self.add_static_prop(obj_name, obj_info)
+                else:
+                    self.add_articulated_object(obj_name, obj_info)
+
             else:
                 if obj_info.asset.label not in self.objects:
                     self.__create_object(obj_name, obj_info)
@@ -323,6 +330,12 @@ class IsaacSimSimulator(Simulator):
         self.cameras = {}
         self.lights = []
         self.articulated_objects = {}
+        # Zero-joint props (warehouse furniture): plain referenced prims, keyed
+        # by asset uid. See add_static_prop.
+        self.static_props = {}
+        # {object_prim_path: (uid, rgba)} for objects whose colour comes from the
+        # asset instead of its USD. Applied after world.reset() — see step().
+        self._pending_colors = {}
 
         self.add_robot()
         self.add_cameras()
@@ -450,13 +463,31 @@ class IsaacSimSimulator(Simulator):
 
             scene_prim.GetAttribute("visibility").Set("visible")
 
+        # If static furniture props exist (e.g. TableTrolley bench), the primitive
+        # table cuboid is redundant in Isaac Sim rendering. Skip table_cuboid if
+        # static furniture is present or if table_box is marked invisible.
+        has_static_furniture = bool(self.static_props) or any(
+            k.startswith("furniture_") or getattr(getattr(v, "asset", None), "static", False)
+            for k, v in self.task.layout.actors.items()
+        )
+
         table_box = self.task.layout.actors.get("table")
-        if table_box is not None:
+        if table_box is not None and not has_static_furniture and not getattr(table_box, "invisible", False):
             self._setup_table(f"{self.workspace_prim_path}/table_cuboid", table_box)
+        else:
+            stage = omni.usd.get_context().get_stage()
+            prim_path = f"{self.workspace_prim_path}/table_cuboid"
+            if stage.GetPrimAtPath(prim_path).IsValid():
+                stage.RemovePrim(prim_path)
 
         table2_box = self.task.layout.actors.get("table2")
-        if table2_box is not None:
+        if table2_box is not None and not getattr(table2_box, "invisible", False):
             self._setup_table(f"{self.workspace_prim_path}/table2_cuboid", table2_box)
+        else:
+            stage = omni.usd.get_context().get_stage()
+            prim_path = f"{self.workspace_prim_path}/table2_cuboid"
+            if stage.GetPrimAtPath(prim_path).IsValid():
+                stage.RemovePrim(prim_path)
 
     def __update_cameras(self):
         for cname, cameraEntity in self.task.layout.cameras.items():
@@ -512,6 +543,62 @@ class IsaacSimSimulator(Simulator):
         for obj in self.task.preload_objects():
             self.__create_object(obj.asset.label, obj)
 
+    def _bind_color_material(self, object_prim_path: str, uid: str, rgba) -> None:
+        """Give an object a solid-colour material in Isaac, from `asset.rgba`.
+
+        Used by assets whose colour isn't in their USD — the tote variants
+        (bin_b04_red/blue) reuse one SimReady bin, so red/blue has to be applied
+        here.
+
+        Overriding the asset's OWN material does NOT work: editing the bound
+        shader's `diffuse_texture`/`diffuse_color_constant`/`diffuse_tint` (even
+        after de-instancing, with the values verified on the live stage) leaves
+        the render untouched. What does work — and is the pattern this engine
+        already uses for the table — is creating a fresh OmniPBR material and
+        binding it over the mesh with `strongerThanDescendants`.
+        """
+        created: list[str] = []
+        omni.kit.commands.execute(
+            "CreateAndBindMdlMaterialFromLibrary",
+            mdl_name="OmniPBR.mdl",
+            mtl_name="OmniPBR",
+            mtl_created_list=created,
+        )
+        if not created:
+            print(f"Warning: could not create colour material for {uid}")
+            return
+
+        stage = omni.usd.get_context().get_stage()
+        mat_prim = stage.GetPrimAtPath(created[0])
+        for child in mat_prim.GetChildren():
+            if child.IsA(UsdShade.Shader):
+                shader = UsdShade.Shader(child)
+                shader.CreateInput("diffuse_color_constant", Sdf.ValueTypeNames.Color3f).Set(
+                    Gf.Vec3f(float(rgba[0]), float(rgba[1]), float(rgba[2]))
+                )
+                shader.CreateInput("reflection_roughness_constant", Sdf.ValueTypeNames.Float).Set(0.4)
+
+        material = UsdShade.Material(mat_prim)
+        root = stage.GetPrimAtPath(object_prim_path)
+
+        # De-instance FIRST. The SimReady bin is an instanceable prim, and USD
+        # forbids authoring on instance proxies — binding straight onto one
+        # segfaults the process. Turning instancing off composes real prims we
+        # can bind (and gives each object its own material).
+        for prim in Usd.PrimRange(root, Usd.TraverseInstanceProxies()):
+            if prim.IsInstanceable():
+                prim.SetInstanceable(False)
+
+        bound = 0
+        for prim in Usd.PrimRange(root):
+            if prim.GetTypeName() == "Mesh":
+                UsdShade.MaterialBindingAPI.Apply(prim).Bind(
+                    material, UsdShade.Tokens.strongerThanDescendants
+                )
+                bound += 1
+        if bound == 0:
+            print(f"Warning: no mesh to colour under {object_prim_path}")
+
     def __create_object(self, obj_key: str, object_info: ObjectActor):
         obj_id = object_info.uid # object_info["id"]
         object_prim_path = f'{self.workspace_prim_path}/{object_info.asset.label}' # {object_info["name"]}
@@ -530,6 +617,13 @@ class IsaacSimSimulator(Simulator):
         object_usd_path = os.path.abspath(resolve_data_path(object_info.asset.usd_path,auto_download=True))
         
         isaacsim_stage.add_reference_to_stage(usd_path=object_usd_path, prim_path=object_prim_path)
+
+        # Per-asset colour (e.g. the red/blue tote variants, which share one USD).
+        # DEFERRED: binding here has no effect — the material must be created
+        # after world.reset() (see step()), otherwise the render ignores it.
+        rgba = getattr(object_info.asset, "rgba", None)
+        if rgba is not None:
+            self._pending_colors[object_prim_path] = (obj_id, rgba)
 
         obj_xform = XFormPrim(prim_path=object_prim_path)
         geom_prim_path = f'{object_prim_path}/Meshes'
@@ -608,6 +702,7 @@ class IsaacSimSimulator(Simulator):
     def step(self, mujoco_env = None):
         if not self.is_isaac_reset:
             self.world.reset()
+
             # self.__update_object()
             self.robot.initialize()
 
@@ -681,6 +776,16 @@ class IsaacSimSimulator(Simulator):
 
             # Stop all motion
             self.robot._articulation_view.set_joint_velocities(zeros)
+
+            # Asset-driven object colours (see _bind_color_material). Applied at
+            # the END of the reset, on a fully initialised stage: binding during
+            # scene construction — or even right after world.reset() — leaves the
+            # render untouched. Verified by rendering each variant.
+            if self._pending_colors:
+                for prim_path, (uid, rgba) in self._pending_colors.items():
+                    self._bind_color_material(prim_path, uid, rgba)
+                self._pending_colors = {}
+
             self.is_isaac_reset = True
             self._update_collision_spheres()
 
@@ -808,6 +913,54 @@ class IsaacSimSimulator(Simulator):
     def set_states(self, states: Dict[str, float]) -> None:
         raise NotImplementedError
     
+    def add_static_prop(self, obj_name: str, obj_info):
+        """Render a zero-joint prop (warehouse furniture) as a plain USD reference.
+
+        Unlike `add_articulated_object`, this gives each prop its OWN prim path
+        (so several can coexist) and positions it with an XForm instead of a
+        SingleArticulation — these assets have no articulation for Isaac to bind,
+        and their USD root prim is not named after the object. Purely visual:
+        physics for these lives in MuJoCo, so collisions are left disabled and
+        the prop is never stepped.
+        """
+        uid = obj_info.asset.uid
+        prim_path = f"{self.workspace_prim_path}/static_props/{uid}"
+
+        if uid not in self.static_props:
+            # Remote URLs (http/https/omniverse) are referenced as-is: resolving
+            # them as data paths would mangle them, and referencing the asset at
+            # its original location is what lets its MDL materials — declared
+            # relative to that location — resolve, keeping the authored textures.
+            # Local paths follow __create_object: ABSOLUTE (+ auto_download), since
+            # a relative one makes add_reference_to_stage load nothing and the
+            # wrap below then fails with "prim matching the expression needs to
+            # created before wrapping it as view".
+            raw_usd = obj_info.asset.usd_path
+            if str(raw_usd).startswith(("http://", "https://", "omniverse://")):
+                usd_path = str(raw_usd)
+            else:
+                usd_path = os.path.abspath(
+                    resolve_data_path(raw_usd, auto_download=True)
+                )
+            isaacsim_stage.add_reference_to_stage(usd_path=usd_path, prim_path=prim_path)
+            self.static_props[uid] = XFormPrim(prim_path=prim_path)
+
+        # (Re)apply pose AND scale every reset — the layout can move furniture
+        # between episodes even though it never moves within one.
+        prop = self.static_props[uid]
+        prop.set_world_pose(
+            np.asarray(obj_info.pose.position, dtype=np.float32),
+            np.asarray(obj_info.pose.quaternion, dtype=np.float32),
+        )
+        # add_reference_to_stage does NOT convert units, so a centimetre-authored
+        # asset (metersPerUnit=0.01) lands 100x too large in a metres stage —
+        # e.g. the trolley at 224 m long, swallowing the camera. This is the same
+        # correction Omniverse's metrics assembler writes as `unitsResolve`.
+        scale = float(getattr(obj_info.asset, "usd_scale", 1.0))
+        if scale != 1.0:
+            prop.set_local_scale(np.array([scale] * 3, dtype=np.float32))
+        prop.set_visibility(True)
+
     def add_articulated_object(self, obj_name: str, obj_info: ObjectActor):
         obj_name = obj_info.asset.name
         uid = obj_info.asset.uid

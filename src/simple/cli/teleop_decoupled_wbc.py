@@ -241,6 +241,19 @@ def main(
         print("[Record] Episode reset: elastic band skipped, policy reset to initial pose")
         print("[Record] Upper body tracking PAUSED — align arms then press activation button") """
 
+        # Per-episode goal HUD streamed to the headset. Only tasks that expose
+        # `required_counts` (quantities that vary per episode) show anything;
+        # every other task keeps the plain view.
+        counts = getattr(task, "required_counts", None)
+        agent.hud_lines = (
+            [
+                f"{counts['drivers']} Chaves",
+                f"{counts['screws']} Parafusos",
+            ]
+            if counts
+            else []
+        )
+
     # stabilized_printed = False
     step_pbar = None  # Progress bar for current recording episode
 
@@ -358,6 +371,15 @@ def main(
 
                     if rec_state == RecordingState.RECORDING:
                         frame = _build_frame(agent, obj_names, **data_frame)
+                        # Keep the recorded prompt in sync with the CURRENT episode.
+                        # Tasks whose instruction varies per episode (e.g. the
+                        # industrial sorting task's quantity DR) would otherwise be
+                        # saved under the prompt baked in at exporter init.
+                        # NOTE: set the exporter's fallback instead of putting
+                        # "task" in the frame — add_frame runs lerobot's
+                        # validate_frame first, which rejects any key that isn't a
+                        # declared feature ("Extra features: {'task'}").
+                        exporter.task = task.instruction
                         exporter.add_frame(frame)
                         if step_pbar is not None:
                             step_pbar.update(1)

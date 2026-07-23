@@ -52,6 +52,9 @@ class VuerDecoupledAgent(SonicWbcAgent):
 
         self.episodes_saved   = 0
         self.num_episodes     = 100
+        # Extra per-episode HUD lines drawn on the VR stream (set by the teleop
+        # CLI on every episode reset; empty for tasks with a fixed goal).
+        self.hud_lines: list[str] = []
         self.sim_dt           = self.robot.sonic_config["SIMULATE_DT"]
 
         # Controlled-drop state
@@ -249,18 +252,34 @@ class VuerDecoupledAgent(SonicWbcAgent):
             print("[VuerDecoupled] Warning: missing head_stereo_left/right in observation.")
             return
 
+        # NOTE: ascontiguousarray() on the reversed view COPIES, so every overlay
+        # below is drawn on the display buffer only — the recorded observation
+        # images stay clean.
         left_bgr  = np.ascontiguousarray(left[..., ::-1])
         right_bgr = np.ascontiguousarray(right[..., ::-1])
 
-        # Draw episode counter on each eye
+        # Draw episode counter on each eye (top-right, compacto)
         text   = f"{self.episodes_saved}/{self.num_episodes}"
         font   = cv2.FONT_HERSHEY_SIMPLEX
-        scale, thickness = 1.0, 2
+        scale, thickness = 0.6, 1
         (tw, th), _ = cv2.getTextSize(text, font, scale, thickness)
-        x = left_bgr.shape[1] - tw - 100
-        y = th + 10
+        x = left_bgr.shape[1] - tw - 80
+        y = th + 15
         cv2.putText(left_bgr, text, (x, y), font, scale, (0, 255, 0), thickness)
         cv2.putText(right_bgr, text, (x, y), font, scale, (0, 255, 0), thickness)
+
+        # Per-episode goal HUD (top-left, fonte reduzida)
+        hud_scale, hud_thickness = 0.6, 2
+        for i, line in enumerate(self.hud_lines):
+            y_pos = y + i * 24
+            cv2.putText(
+                left_bgr, line, (20, y_pos), font, hud_scale,
+                (0, 255, 255), hud_thickness,
+            )
+            cv2.putText(
+                right_bgr, line, (20, y_pos), font, hud_scale,
+                (0, 255, 255), hud_thickness,
+            )
 
         stereo_bgr = np.concatenate([left_bgr, right_bgr], axis=1)
         
