@@ -124,41 +124,70 @@ print("    totes:", totes, " parts:", parts)
 # --- 3b. part-count DR: multiple resets -> counts in [1,4], unique bodies,
 #         min separation, and state_dict replay recreates the same parts -------
 task = env.unwrapped.task
-counts_ok, sep_ok = True, True
-seen_counts = []
+# NOTE: keep the number of env.reset() calls low — each one rebuilds the MuJoCo
+# scene and recreates the EGL renderers, and piling them up segfaults the
+# process. Part-count DR and quantity DR are therefore checked in ONE loop.
+counts_ok, sep_ok, qty_ok = True, True, True
+seen = []
 for k in range(3):
     env.reset(seed=k + 1)
     m = env.unwrapped.mujoco.mjModel
     names_k = [m.body(i).name for i in range(m.nbody)]
     screws_l, drivers_l = task._part_labels()
     n_s, n_d = len(screws_l), len(drivers_l)
-    seen_counts.append((n_s, n_d))
+    req = task.required_counts
+    seen.append((n_s, n_d, req["screws"], req["drivers"]))
     counts_ok &= 1 <= n_s <= 4 and 1 <= n_d <= 4
     counts_ok &= all(lbl in names_k for lbl in screws_l + drivers_l)
-    # min separation among spawned parts at reset (layout poses)
+    # quantity DR: asked counts within [1, spawned] and reflected in the prompt
+    qty_ok &= 1 <= req["screws"] <= n_s and 1 <= req["drivers"] <= n_d
+    qty_ok &= str(req["drivers"]) in task.instruction and str(req["screws"]) in task.instruction
+    # min separation among the parts actually ON the bench. Padding instances are
+    # all parked together at (0, 0, -10) below the floor, so they must be excluded
+    # or they'd trivially "overlap" each other.
     pts = [np.array(task.layout.actors[key].pose.position[:2])
-           for key in task.layout.actors if key == "target" or key.startswith("part_")]
+           for key in task.layout.actors
+           if (key == "target" or key.startswith("part_"))
+           and task.layout.actors[key].pose.position[2] > -1.0]
     for i in range(len(pts)):
         for j in range(i + 1, len(pts)):
             if np.linalg.norm(pts[i] - pts[j]) < 0.08:  # tolerance under 0.10 nominal
                 sep_ok = False
-print(f"[3b] part counts over 3 resets (screws, drivers): {seen_counts}  "
-      f"in [1,4] + bodies present: {counts_ok}  separation ok: {sep_ok}")
+print(f"[3b] (spawned_s, spawned_d, asked_s, asked_d) over 3 resets: {seen}")
+print(f"[3b] counts in [1,4] + bodies present: {counts_ok}  separation: {sep_ok}")
+print(f"[3c] asked quantities in [1,spawned] and present in the prompt: {qty_ok}")
+print(f'[3c] example prompt: "{task.instruction}"')
+
+# --- 3d. render invariant: EVERY ObjectActor must carry `.material` ----------
+# The Isaac engine reads obj_info.material for each ObjectActor. MaterialDR sets
+# it while Task.reset builds the layout, so anything this task adds afterwards
+# (totes, parts) must set it too or rendering dies with
+# "'ObjectActor' object has no attribute 'material'".
+from simple.core.actor import ObjectActor
+missing = [k for k, a in task.layout.actors.items()
+           if isinstance(a, ObjectActor) and not hasattr(a, "material")]
+mat_ok = not missing
+print(f"[3d] every ObjectActor has .material (render invariant): {mat_ok}"
+      + (f"  MISSING={missing}" if missing else ""))
 
 sd = task.state_dict()
 parts_before = sorted([k for k in task.layout.actors if k.startswith("part_")])
+counts_before, instr_before = task.required_counts, task.instruction
 env.reset(options={"state_dict": sd})
 parts_after = sorted([k for k in task.layout.actors if k.startswith("part_")])
 replay_ok = parts_before == parts_after
-print(f"[3b] replay roundtrip: {len(parts_before)} parts -> identical keys: {replay_ok}")
+replay_ok &= task.required_counts == counts_before and task.instruction == instr_before
+print(f"[3b] replay roundtrip: {len(parts_before)} parts -> identical keys+counts+prompt: {replay_ok}")
 
-# rebuild handles for stage 4 (last reset regenerated the scene)
-env.reset(seed=0)
+# rebuild handles for the reward stages (the replay reset regenerated the scene)
 mjenv = env.unwrapped.mujoco
 m, d = mjenv.mjModel, mjenv.mjData
 
-# tote colors on the actual geoms
-for tote, want in [(_TOTE_RED, [0.80, 0.10, 0.10]), (_TOTE_BLUE, [0.10, 0.25, 0.85])]:
+# tote colours on the actual geoms — expectations read from the asset definition
+# (Totes_Variants) so this never goes stale when the colours are retuned.
+from simple.assets.totes import Totes_Variants
+for tote in (_TOTE_RED, _TOTE_BLUE):
+    want = Totes_Variants[tote]["rgba"][:3]
     bid = m.body(tote).id
     gids = [g for g in range(m.ngeom) if m.geom_bodyid[g] == bid]
     rgba = m.geom_rgba[gids[0]][:3]
@@ -195,11 +224,32 @@ def _place(label, x, y, z):
 _DECK_Z = 0.98  # a validated cart shelf level; tote origin sits at its base
 
 
-def _pose_goal(red_shelf_xy, blue_shelf_xy):
+def _pose_goal(red_shelf_xy, blue_shelf_xy, n_screws=None, n_drivers=None):
+    """Pose the goal: totes on their shelves with the asked-for parts inside.
+
+    Places `required_counts` of each class (or an override, to test the
+    threshold) spread slightly so they don't perfectly overlap but stay well
+    within the in-tote XY tolerance.
+    """
+    screws_l, drivers_l = task._part_labels()
+    req = task.required_counts
+    n_s = req["screws"] if n_screws is None else n_screws
+    n_d = req["drivers"] if n_drivers is None else n_drivers
     _place(_TOTE_RED, red_shelf_xy[0], red_shelf_xy[1], _DECK_Z - 0.002)
     _place(_TOTE_BLUE, blue_shelf_xy[0], blue_shelf_xy[1], _DECK_Z - 0.002)
-    _place("metal_screw", red_shelf_xy[0], red_shelf_xy[1], _DECK_Z + 0.01)
-    _place("blue_screwdriver", blue_shelf_xy[0], blue_shelf_xy[1], _DECK_Z + 0.01)
+    # Parts beyond the requested count are PARKED far away — otherwise they'd
+    # linger inside the tote from a previous _pose_goal call and the "one short"
+    # check would still see them.
+    for i, lbl in enumerate(screws_l):
+        if i < n_s:
+            _place(lbl, red_shelf_xy[0] + 0.02 * i, red_shelf_xy[1], _DECK_Z + 0.01)
+        else:
+            _place(lbl, 4.0 + 0.1 * i, 4.0, 1.0)
+    for i, lbl in enumerate(drivers_l):
+        if i < n_d:
+            _place(lbl, blue_shelf_xy[0] + 0.02 * i, blue_shelf_xy[1], _DECK_Z + 0.01)
+        else:
+            _place(lbl, -4.0 - 0.1 * i, 4.0, 1.0)
     mujoco.mj_forward(m, d)
 
 
@@ -216,12 +266,31 @@ _pose_goal(RIGHT_XY, LEFT_XY)
 r_swap = task.compute_reward({}, mujoco_env=mjenv)
 print(f"[4] reward with swapped shelves = {r_swap} (expected 0.5, no shelf credit)")
 
+# --- 4b. quantity threshold, deterministic ------------------------------------
+# Force the asked counts to the number of parts actually on the bench, then pose
+# the goal with exactly that many (must be 1.0) and with one screw fewer (must
+# lose exactly the screw condition -> 0.75). Independent of the episode's draw.
+screws_l, drivers_l = task._part_labels()
+n_s, n_d = len(screws_l), len(drivers_l)
+task._required_counts = {"screws": n_s, "drivers": n_d}
+print(f"[4b] forcing asked = visible: screws={n_s} drivers={n_d}")
+
+_pose_goal(LEFT_XY, RIGHT_XY, n_screws=n_s, n_drivers=n_d)
+r_exact = task.compute_reward({}, mujoco_env=mjenv)
+print(f"[4b] reward with exactly the asked quantity = {r_exact} (expected 1.0)")
+
+_pose_goal(LEFT_XY, RIGHT_XY, n_screws=max(0, n_s - 1), n_drivers=n_d)
+r_short = task.compute_reward({}, mujoco_env=mjenv)
+print(f"[4b] reward with ONE SCREW SHORT = {r_short} (expected 0.75, screw condition lost)")
+
 ok = (
-    rel_ok
+    rel_ok and qty_ok and replay_ok
     and _SHELF_LEFT in body_names and _SHELF_RIGHT in body_names
     and not gravity and _TOTE_RED in body_names and _TOTE_BLUE in body_names
     and px[0] < -0.4 and xaxis[0] > 0.9 and r == 0.0
     and r_goal == 1.0 and r_swap <= 0.5
+    and r_exact == 1.0 and r_short == 0.75
+    and mat_ok
 )
 print("[done] FULL VALIDATION:", "PASS" if ok else "FAIL")
 env.close()

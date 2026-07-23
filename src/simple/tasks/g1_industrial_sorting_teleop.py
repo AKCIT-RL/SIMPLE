@@ -185,9 +185,51 @@ _PART_LO, _PART_HI = _op_to_canon_region((0.12, -0.20), (0.28, 0.58))
 _PART_REGION = dict(x=(_PART_LO[0], _PART_HI[0]), y=(_PART_LO[1], _PART_HI[1]))
 _PART_MIN_SEP = 0.10                   # min XY distance between spawned parts
 _PART_PLACE_TRIES = 200
+# Padding instances are parked far below the floor (z = -10) to keep
+# `observation.object_poses` a constant shape; anything under this z is not in
+# play and must not count toward the prompt quantities or the reward.
+_HIDDEN_Z = -1.0
+# Parking slots for the padding instances. They MUST be spaced apart: spawning
+# them all on the same spot makes them deeply interpenetrate, and MuJoCo's
+# impulse response launches them back up through the workspace at ~140 m/s.
+# Spacing > object size (parts are < 0.15 m) guarantees no initial contact; from
+# there they simply free-fall away from the scene, generating no contacts.
+_PARK_X, _PARK_Y, _PARK_Z = 0.0, 0.0, -10.0
+_PARK_SPACING = 1.0
+
+# Shader params the Isaac engine reads off every ObjectActor (`obj_info.material`).
+# The MaterialDR sets these while Task.reset builds the layout, but the totes and
+# parts are added AFTERWARDS (in this task's reset), so they'd reach the renderer
+# without the attribute and crash it with
+# "'ObjectActor' object has no attribute 'material'". MuJoCo never reads it, which
+# is why this only ever surfaced at render time. Values match MaterialDR's
+# "fixed" branch, keeping the authored look.
+_FIXED_OBJECT_MATERIAL = {
+    "reflection_roughness_constant": 0.5,
+    "metallic_constant": 0.0,
+    "specular_level": 0.0,
+}
 
 # Target (screw #1) region, operator frame -> canonical.
 _TARGET_LO, _TARGET_HI = _op_to_canon_region((0.15, 0.15), (0.22, 0.35))
+
+
+# Original NVIDIA URLs for the furniture USDs, used as the ISAAC usd_path.
+# The downloaded local .usd renders untextured: its materials are referenced with
+# paths relative to the asset's original location on the NVIDIA server
+# ("../../../../../Materials/Base/..."), which resolve to nothing next to a lone
+# local copy — Isaac then logs "could not find module ...Materials::Base..." and
+# "Failed to create MDL shade node". Referencing the remote USD makes those
+# relative material paths resolve, so the furniture keeps its authored textures.
+# (MuJoCo is unaffected: it uses the local mjcf_path/meshes.)
+_FURNITURE_USD_URL = {
+    "TableTrolley_B02_01":
+        "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/"
+        "DigitalTwin/Assets/Warehouse/Equipment/Carts/TableTrolley_B/TableTrolley_B02_01.usd",
+    "MobileShelvingCart_C05_01":
+        "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/"
+        "DigitalTwin/Assets/Warehouse/Equipment/Carts/MobileShelvingCart_C/MobileShelvingCart_C05_01.usd",
+}
 
 
 def _furniture_asset(entry: dict) -> ArticulatedAsset:
@@ -200,8 +242,17 @@ def _furniture_asset(entry: dict) -> ArticulatedAsset:
     folder = entry["folder"]
     return ArticulatedAsset(
         uid=entry["name"],
-        usd_path=f"assets/industrial/{folder}/{folder}.usd",
+        # remote (textured) for Isaac; falls back to the local copy if unknown
+        usd_path=_FURNITURE_USD_URL.get(folder, f"assets/industrial/{folder}/{folder}.usd"),
         mjcf_path=f"assets/industrial/{folder}/{entry['mjcf']}",
+        # zero joints: MuJoCo welds it at a frame, Isaac renders it as a plain
+        # referenced prim (not a SingleArticulation).
+        static=True,
+        # These USDs are authored in centimetres (metersPerUnit = 0.01) — the
+        # same factor IH_basic.usda carries as `unitsResolve`. MuJoCo already has
+        # it baked into the extracted OBJs; Isaac needs it applied on the prim or
+        # the trolley comes in 224 m long and swallows the camera.
+        usd_scale=0.01,
     )
 
 
@@ -248,6 +299,7 @@ def _add_totes(layout: Layout) -> None:
         asset = manager.load(entry["asset_id"].split(":")[-1])
         layout.add_object(key, asset)
         actor = layout.actors[key]
+        actor.set_material(dict(_FIXED_OBJECT_MATERIAL))  # MaterialDR already ran
         x, y = _op_to_canon_xy(*entry["op_xy"])
         stable_z = float(asset.stable_poses[0][2])
         actor.pose.position = [x, y, top + stable_z]
@@ -292,8 +344,12 @@ def _spawn_parts(layout: Layout, replay_parts: list[dict] | None) -> list[dict]:
     if replay_parts is not None:
         for spec in replay_parts:
             asset = _load_labeled_part(spec["asset_id"], spec["label"])
+            # Padding instances are identified by their parked (below-floor)
+            # position and must stay collision-free on replay too.
+            asset.no_collision = spec["position"][2] < _HIDDEN_Z
             layout.add_object(spec["key"], asset)
             actor = layout.actors[spec["key"]]
+            actor.set_material(dict(_FIXED_OBJECT_MATERIAL))  # MaterialDR already ran
             actor.pose.position = list(spec["position"])
             actor.pose.quaternion = list(spec["quaternion"])
         return replay_parts
@@ -346,6 +402,8 @@ def _spawn_parts(layout: Layout, replay_parts: list[dict] | None) -> list[dict]:
     spawned: list[dict] = []
     for i, (asset_id, label, is_visible) in enumerate(to_spawn):
         asset = _load_labeled_part(asset_id, label)
+        # Padding takes no part in physics (see the parking comment below).
+        asset.no_collision = not is_visible
         # Em vez de pegar sempre a pose [0] (que na chave de fenda é vertical e perfeita demais para o MuJoCo derrubar), 
         # sorteamos entre todas as poses de descanso naturais calculadas para aquele asset.
         stable = np.asarray(random.choice(asset.stable_poses), dtype=float)
@@ -358,14 +416,21 @@ def _spawn_parts(layout: Layout, replay_parts: list[dict] | None) -> list[dict]:
             z_pos = top + float(stable[2])
         else:
             # Padding Object (Hidden):
-            # We place this object far below the floor (Z = -10.0) and at the origin.
-            # This completely hides it from the robot's cameras, prevents it from interacting
-            # with any collision meshes (like the table or floor), and guarantees it will never 
-            # trigger the success reward. The downstream Imitation Learning policy will implicitly 
-            # learn to ignore any object state with a heavily negative Z coordinate.
-            xy = np.array([0.0, 0.0])
+            # Parked far below the floor (Z = -10.0), which hides it from the
+            # robot's cameras and guarantees it can never trigger the success
+            # reward. The downstream Imitation Learning policy will implicitly
+            # learn to ignore any object state with a heavily negative Z.
+            #
+            # IMPORTANT: each padding object gets its OWN parking slot. Stacking
+            # them all at the same point makes them spawn deeply interpenetrated,
+            # and MuJoCo resolves that with a huge impulse — measured launching
+            # them upward at ~143 m/s, straight back THROUGH the workspace where
+            # they can strike the robot, the bench and the parts. Since the number
+            # of padding objects varies per episode, so did the damage, which is
+            # what made performance/behaviour inconsistent across resets.
+            xy = np.array([_PARK_X + i * _PARK_SPACING, _PARK_Y])
             yaw = 0.0
-            z_pos = -10.0
+            z_pos = _PARK_Z
 
         # stable orientation composed with a random yaw (same recipe as spatial DR)
         ori = t3d.quaternions.mat2quat(
@@ -374,6 +439,7 @@ def _spawn_parts(layout: Layout, replay_parts: list[dict] | None) -> list[dict]:
         key = f"part_{i}_{label}"
         layout.add_object(key, asset)
         actor = layout.actors[key]
+        actor.set_material(dict(_FIXED_OBJECT_MATERIAL))  # MaterialDR already ran
         actor.pose.position = [float(xy[0]), float(xy[1]), float(z_pos)]
         actor.pose.quaternion = [float(v) for v in ori]
         spawned.append(
@@ -404,7 +470,7 @@ class G1IndustrialSortingTeleop(Task):
         "control_hz": 200,
         "render_hz": 50,
         "dr_level": 0,
-        "version": 2.1,  # part-count DR + spawn-yaw stabilization fix
+        "version": 2.3,  # quantity-parametrised prompt + count-based success
         "reward_dt": 0.02,
         "image_dt": 0.033333,
         "need_gravity": True,
@@ -429,10 +495,14 @@ class G1IndustrialSortingTeleop(Task):
     )
 
     dr_cfgs: dict[str, RandomizerCfg] = dict(
+        # Quantity-parametrised prompt: {n_drivers}/{n_screws} are filled per
+        # episode in reset() from the sampled required counts. Kept in English to
+        # match every other task's language conditioning in this repo.
         language=LanguageDRCfg(
             instructions=[
-                "put the screws in the red tote and place it on the left shelf; "
-                "put the screwdrivers in the blue tote and place it on the right shelf.",
+                "put {drivers} in the blue tote and {screws} in the red tote, "
+                "then place the blue tote on the right shelf and the red tote "
+                "on the left shelf.",
             ]
         ),
         # Parts on the bench: the target is the metal screw (= screw #1, placed
@@ -470,18 +540,28 @@ class G1IndustrialSortingTeleop(Task):
             rotation_z=Box(low=0.0, high=0.0),
             enable_table2=False,
         ),
+        # Lighting is the ONLY visual randomization at the rendering stage:
+        # widened colour temperature (warm 3000K -> cool 8000K) and intensity so
+        # episodes differ in illumination while textures stay original.
         lighting=LightingDRCfg(
             light_mode="random",
             light_num=(2, 3),
-            light_color_temperature=Box(low=6001, high=8001),
-            light_intensity=Box(low=5e4, high=5e4),
+            light_color_temperature=Box(low=3000, high=8000),
+            light_intensity=Box(low=3e4, high=8e4),
             light_radius=Box(0.08, 0.12),
             light_length=Box(0.51, 2.1),
             light_spacing=Box((1.0, 1.0), (2.5, 2.5)),
             light_position=Box((-1.1, -1.1, 1.3), (1.1, 1.1, 1.5)),
             light_eulers=Box((0, 0, -0.5 * np.pi), (0, 0, 0.5 * np.pi)),
         ),
-        material=MaterialDRCfg(material_mode="rand_all"),
+        # Rendering stage: keep the ORIGINAL look of furniture and objects —
+        # "fixed" stops the per-episode texture draw for the table/ground and
+        # pins the shader params (roughness/metallic/specular) to their defaults
+        # instead of sampling them. Furniture, totes and parts already render
+        # with their own USD materials (the engine only overrides table/ground),
+        # so this keeps the whole scene on its authored textures. Visual variety
+        # comes from LightingDRCfg below.
+        material=MaterialDRCfg(material_mode="fixed"),
     )
 
     def __init__(
@@ -501,6 +581,7 @@ class G1IndustrialSortingTeleop(Task):
         self._target = None
         self._layout = None
         self._extra_parts: list[dict] = []
+        self._required_counts: dict[str, int] = {"screws": 1, "drivers": 1}
 
         self.robot_cfg.update(dict(uid=robot_uid))
         self.reward = 0
@@ -536,6 +617,15 @@ class G1IndustrialSortingTeleop(Task):
     def target(self) -> Actor:
         assert self._target is not None, "call reset() first"
         return self._target
+
+    @property
+    def required_counts(self) -> dict[str, int]:
+        """How many of each class this episode asks for ({"screws", "drivers"}).
+
+        Sampled per episode in [1, n_spawned]; drives both the prompt and the
+        success thresholds. Read by the teleop CLI to build the VR HUD.
+        """
+        return dict(self._required_counts)
 
     @property
     def tote_red(self) -> Actor:
@@ -575,10 +665,35 @@ class G1IndustrialSortingTeleop(Task):
             replay_parts = options["state_dict"].get("extra_parts")
         self._extra_parts = _spawn_parts(self.layout, replay_parts)
         self._target = self.layout.actors.get("target")
+
+        # Quantity DR: how many of each class the operator is asked to sort this
+        # episode. Sampled in [1, n_spawned] per class (never 0, may be all of
+        # them). Replayed from the recorded state_dict so the prompt AND the
+        # success threshold match the recording.
+        screws, drivers = self._part_labels()
+        replay_counts = None
+        if options is not None and options.get("state_dict") is not None:
+            replay_counts = options["state_dict"].get("required_counts")
+        if replay_counts is not None:
+            self._required_counts = dict(replay_counts)
+        else:
+            import random
+
+            self._required_counts = {
+                "screws": random.randint(1, max(1, len(screws))),
+                "drivers": random.randint(1, max(1, len(drivers))),
+            }
+
         lang_dr = self.dr.get_randomizer("language")
         assert lang_dr is not None
         language_template = lang_dr(self.metadata.get("split", "train"))
-        self._instruction = language_template.format(self._target.asset.name)  # type: ignore
+        def _qty(n: int, noun: str) -> str:
+            return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
+
+        self._instruction = language_template.format(
+            drivers=_qty(self._required_counts["drivers"], "screwdriver"),
+            screws=_qty(self._required_counts["screws"], "screw"),
+        )
         self.reward = 0
         self.robot.reset(spawn_pose=self.layout.robot.pose)
 
@@ -590,6 +705,8 @@ class G1IndustrialSortingTeleop(Task):
                 "tote_blue_uid": _TOTE_BLUE,
                 # part-count DR spawns, so replay recreates the same bodies
                 "extra_parts": self._extra_parts,
+                # quantity DR: replay must reuse the same prompt AND thresholds
+                "required_counts": dict(self._required_counts),
             }
         )
         return state_dict
@@ -597,7 +714,13 @@ class G1IndustrialSortingTeleop(Task):
     # ------------------------------------------------------------------ checks
 
     def _part_labels(self) -> tuple[list[str], list[str]]:
-        """(screw labels, screwdriver labels) among target + part-count spawns.
+        """(screw labels, screwdriver labels) that are actually IN PLAY.
+
+        The spawner always creates _MAX_PARTS_PER_CLASS instances per class so the
+        recorded `observation.object_poses` keeps a constant shape across episodes,
+        parking the unused ones far below the floor. Those padding instances are
+        filtered out here so they never inflate the sampled prompt quantities nor
+        the reward thresholds.
 
         Order matters in the tests: 'screwdriver' contains 'screw', so drivers
         are matched first.
@@ -606,6 +729,8 @@ class G1IndustrialSortingTeleop(Task):
         drivers: list[str] = []
         for name, actor in self.layout.actors.items():
             if name != "target" and not name.startswith("part_"):
+                continue
+            if actor.pose.position[2] < _HIDDEN_Z:  # padding instance, not in play
                 continue
             label = str(actor.asset.label).lower()
             if "screwdriver" in label:
@@ -635,14 +760,16 @@ class G1IndustrialSortingTeleop(Task):
             return None
         return np.array(mj_data.xpos[bid][:2])
 
-    def _tote_contains(self, mj_model, mj_data, pairs, tote: str, part_labels: list[str]) -> bool:
-        """True if any listed part touches the tote AND is within its XY footprint.
+    def _count_in_tote(self, mj_model, mj_data, pairs, tote: str, part_labels: list[str]) -> int:
+        """How many of the listed parts are in the tote.
 
+        A part counts when it touches the tote AND sits within its XY footprint.
         Uses live body positions from mjData (not the layout's initial poses).
         """
         tote_xy = self._body_xy(mj_model, mj_data, tote)
         if tote_xy is None:
-            return False
+            return 0
+        count = 0
         for part in part_labels:
             if frozenset((tote, part)) not in pairs:
                 continue
@@ -650,17 +777,20 @@ class G1IndustrialSortingTeleop(Task):
             if part_xy is None:
                 continue
             if np.all(np.abs(tote_xy - part_xy) <= _IN_TOTE_XY_TOL):
-                return True
-        return False
+                count += 1
+        return count
 
     def check_success(self, info: dict[str, Any], *args, **kwargs) -> bool:
         reward = self.compute_reward(info, *args, **kwargs)
         return reward >= self.success_criteria
 
     def compute_reward(self, info: dict[str, Any], *args, **kwargs) -> float:
-        """0.25 per condition; 1.0 (success) only when the full sort is done:
-        >=1 screw in the red tote, red tote on the LEFT shelf, >=1 screwdriver
-        in the blue tote, blue tote on the RIGHT shelf."""
+        """0.25 per condition; 1.0 (success) only when the full sort is done, with
+        the per-episode quantities the prompt asked for:
+        >=Y screws in the red tote, red tote on the LEFT shelf,
+        >=X screwdrivers in the blue tote, blue tote on the RIGHT shelf.
+        (X/Y = self._required_counts; "at least", so extra parts don't invalidate.)
+        """
         mujoco_env = kwargs.get("mujoco_env", None)
         if mujoco_env is None:
             self.reward = 0.0
@@ -671,13 +801,15 @@ class G1IndustrialSortingTeleop(Task):
         pairs = self._contact_pairs(mj_model, mj_data)
         screws, drivers = self._part_labels()
 
-        screw_in_red = self._tote_contains(mj_model, mj_data, pairs, _TOTE_RED, screws)
-        driver_in_blue = self._tote_contains(mj_model, mj_data, pairs, _TOTE_BLUE, drivers)
+        n_screws_in_red = self._count_in_tote(mj_model, mj_data, pairs, _TOTE_RED, screws)
+        n_drivers_in_blue = self._count_in_tote(mj_model, mj_data, pairs, _TOTE_BLUE, drivers)
+        screws_ok = n_screws_in_red >= self._required_counts["screws"]
+        drivers_ok = n_drivers_in_blue >= self._required_counts["drivers"]
         red_on_left = frozenset((_TOTE_RED, _SHELF_LEFT)) in pairs
         blue_on_right = frozenset((_TOTE_BLUE, _SHELF_RIGHT)) in pairs
 
         self.reward = 0.25 * (
-            int(screw_in_red) + int(red_on_left) + int(driver_in_blue) + int(blue_on_right)
+            int(screws_ok) + int(red_on_left) + int(drivers_ok) + int(blue_on_right)
         )
         return self.reward
 
