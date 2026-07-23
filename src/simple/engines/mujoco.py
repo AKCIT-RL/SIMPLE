@@ -581,6 +581,21 @@ class MujocoSimulator(Simulator):
             self.joints[joint_name].qvel = 0
             self.joints[joint_name].qacc = 0
 
+    @staticmethod
+    def object_joint_label(actor) -> str:
+        """The free-joint label of an object body (the joint is `{label}_joint`).
+
+        Mirrors the naming in `_build_object`. Callers that set object poses must
+        resolve names through this and NOT through `asset.name`: sibling copies of
+        one asset share a name but carry distinct labels, so using the name sends
+        several recorded poses to the same joint and leaves the other instances
+        frozen wherever reset put them.
+        """
+        asset = actor.asset
+        if isinstance(asset, SemanticAnnotated):
+            return asset.label
+        return asset.uid
+
     def set_object_poses(self, obj_names, obj_positions, obj_orientations):
         for _, (name, p, q) in enumerate(zip(obj_names, obj_positions, obj_orientations)):
             self.mjData.joint(f"{name}_joint").qpos = np.concatenate([p, q], axis=0)
