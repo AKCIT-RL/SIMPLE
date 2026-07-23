@@ -367,6 +367,357 @@ robô→mobília é calculado no arranjo de operador **e** no mapeado, e compara
 1e-9. `[2c] ... identical: True`. Resto do FULL PASS mantido (robô canônico,
 cores, DR de quantidade, replay, recompensa goal 1.0 / swap 0.5).
 
+### 1.13 v2.3 — prompt com quantidades variáveis + HUD no VR
+
+Demanda: prompt por episódio no formato *"pegue X chaves no tote azul e Y
+parafusos no tote vermelho, depois leve às respectivas estantes"*, com X/Y
+aleatórios; e mostrar as quantidades na tela streamada para o VR.
+
+**Análise de viabilidade (feita antes de codar).** Três pontos:
+1. *Prompt variável* — o template já passa por `.format()` na task; só
+   parametrizar. Sem mudança no framework de DR.
+2. *Gravação* — **risco real encontrado**: `task.instruction` era passado ao
+   exporter **uma única vez** (`_init_exporter`), então todos os episódios
+   seriam salvos com o prompt do primeiro. O exporter, porém, **já suporta task
+   por frame** (`exporter.py`: `frame["task"] = frame.get("task", self.task)`,
+   e `save_episode` monta `episode_tasks`/`task_index`). Corrigido injetando
+   `frame["task"] = task.instruction` antes do `add_frame`.
+3. *Overlay no VR* — o padrão **já existia** (contador de episódios) e é
+   seguro: `_push_stereo_frame` desenha sobre `np.ascontiguousarray(...[::-1])`,
+   que é **cópia**, então as imagens gravadas não são contaminadas.
+
+**Decisões do usuário:** X ∈ [1, n_visível] (nunca 0; spawn segue 1..4) e o
+sucesso passa a exigir **≥X e ≥Y** (tolerante a peças a mais).
+
+**Implementação.**
+- `reset()` sorteia `_required_counts` e formata o prompt (com pluralização);
+  vai para `state_dict["required_counts"]` → replay reusa prompt **e** limiares.
+- `compute_reward`: `_tote_contains` (bool) virou `_count_in_tote` (int);
+  condições passam a ser `n_no_tote >= required`.
+- `required_counts` exposto como property; o CLI popula `agent.hud_lines` no
+  `_on_episode_reset`, e `_push_stereo_frame` desenha as linhas (só para tasks
+  que expõem a property — as demais seguem sem HUD).
+
+**Dois bugs encontrados e corrigidos no caminho:**
+- **Arena do MuJoCo (crash real, afetaria a teleop).** Com 3 mobílias de malha +
+  2 totes + até 8 peças (16 cascos cada), a contagem de restrições estourava a
+  arena automática → `"Insufficient arena memory ... above 19M bytes"` seguido de
+  **segfault**. Corrigido em `engines/mujoco.py` com
+  `mjSpec.memory = 256MB` (aditivo, beneficia qualquer cena densa).
+- **Padding contava como peça em jogo.** O spawner cria sempre 4+4 instâncias
+  (shape constante para `observation.object_poses`) e estaciona as não usadas em
+  `z = -10`. O `_part_labels()` as incluía, então o sorteio podia pedir *"4
+  parafusos"* com só 1 na mesa — **episódio impossível**. Agora filtra por
+  `z < _HIDDEN_Z`, contando apenas peças em jogo.
+
+**Validação** (`validate_sorting_task.py`): quantidades pedidas sempre em
+[1, visível] e presentes no prompt; replay reproduz prompt+limiares; e um teste
+**determinístico** do limiar — quantidade exata → **1.0**, uma peça a menos →
+**0.75** (perde exatamente aquela condição). FULL PASS. `version: 2.3`.
+
+### 1.14 Prompt final para VLA + início da renderização
+
+**Prompt (explícito nos dois destinos).**
+> *"put 2 screwdrivers in the blue tote and 1 screw in the red tote, then place
+> the blue tote on the right shelf and the red tote on the left shelf."*
+
+Quantidades pluralizadas corretamente; ambos os mapeamentos cor→estante ditos
+explicitamente (azul→direita, vermelho→esquerda), em inglês para bater com o
+condicionamento de linguagem do resto do repo.
+
+**Gravação verificada (correção de um bug que eu havia introduzido).** A primeira
+tentativa injetava `frame["task"]` antes do `add_frame` — isso **quebraria a
+gravação**: `add_frame` roda `validate_frame(frame, self.features)` *antes* de
+tratar o task, e o `validate_features_presence` do lerobot levanta
+`"Extra features: {'task'}"` (confirmado empiricamente). O correto é atualizar o
+*fallback* do exporter: `exporter.task = task.instruction` antes do `add_frame`
+(o `add_frame` faz `frame.get("task", self.task)`). Testado com um
+`Gr00tDataExporter` real: dois prompts distintos gravados corretamente no
+`episode_buffer["task"]`, sem erro de validação.
+
+**Config de renderização (texturas originais, só luz varia).**
+- `MaterialDRCfg(material_mode="fixed")` — para o sorteio de textura por episódio
+  de table/ground e fixa os shader params. Mobília, totes e peças já renderizam
+  com os materiais dos próprios USDs (o engine só sobrescreve table/ground), logo
+  a cena inteira fica nas texturas autorais.
+- `LightingDRCfg` — única variação visual: temperatura de cor 3000–8000 K e
+  intensidade 3e4–8e4.
+
+**Bloqueio identificado para a mobília no Isaac Sim.** O engine trata
+`ArticulatedObjectActor` (`isaacsim.py:283`) via `add_articulated_object`, mas
+esse caminho foi feito para **um** objeto articulado (porta/forno):
+1. referencia **todas** as mobílias no *mesmo* prim path
+   (`{workspace}/articulated_objects`) — 3 peças colidiriam;
+2. envolve cada uma num `SingleArticulation`, e nossa mobília tem **0 juntas**;
+3. espera o prim raiz com o nome do objeto, mas os USDs de mobília têm
+   `defaultPrim = "World"`.
+
+Ou seja, a mobília precisa de um caminho de **prop estático** no engine do Isaac
+(referência própria por prim path + `XformPrim` com a pose), não de
+`SingleArticulation`.
+
+**Implementado: `add_static_prop` (branch novo, fluxo articulado intocado).**
+- `ArticulatedAsset` ganhou um campo aditivo `static: bool = False`; a mobília do
+  sorting é criada com `static=True` (0 juntas).
+- `isaacsim.py` roteia no `__update_objects`: `static` → `add_static_prop`,
+  senão → `add_articulated_object` (inalterado).
+- `add_static_prop` dá a cada peça um **prim path próprio**
+  (`{workspace}/static_props/{uid}`) e posiciona com `XFormPrim.set_world_pose`.
+  Isso resolve os 3 problemas: sem colisão de path (as duas prateleiras
+  compartilham o mesmo USD mas têm uid distinto), sem `SingleArticulation`, e
+  sem depender do nome do prim raiz. Puramente visual — a física fica no MuJoCo.
+- `self.static_props` inicializado no `_setup_scene` junto dos demais dicts.
+
+Verificado offline: compila, `XFormPrim` disponível, as 3 mobílias marcadas
+`static=True` com USDs presentes, e o lado MuJoCo segue **FULL PASS** (o flag é
+ignorado lá). **A renderização em si ainda precisa de uma execução real do
+`render_decoupled_wbc.py`** (Isaac Sim/GPU não sobe neste ambiente).
+
+### 1.15 Bug: padding ejetado pelo chão (causa da inconsistência entre episódios)
+
+**Sintoma reportado:** desempenho/comportamento inconsistente — às vezes o
+episódio ia bem, resetava e ficava ruim, resetava de novo e melhorava.
+
+**Causa raiz.** As instâncias de padding (as que sobram do spawn 4+4, criadas
+para manter `observation.object_poses` com shape constante) eram estacionadas em
+`z = -10`. Mas o chão é um **plano infinito** (`size=[0,0,1]`), ou seja, um
+semi-espaço: um corpo com colisão parado 10 m *dentro* dele está profundamente
+penetrado, e o MuJoCo o expulsa com um impulso enorme. Medido: os objetos eram
+**lançados para cima a ~143 m/s**, atravessando o workspace (z 0–2 m) — onde
+podiam atingir o robô, a bancada e as peças — e subindo até z ≈ +556 m em 5 s.
+Como a quantidade de padding varia por episódio (8 − visíveis), a perturbação
+variava a cada reset: **exatamente a inconsistência observada**.
+
+Duas hipóteses foram descartadas por medição antes de achar a real:
+- *Arena de 256 MB minha*: A/B com mesmo estado inicial deu 0.53–0.58 ms para
+  16/32/64/256 MB — **sem diferença**. (E a física custa ~0.55 ms contra 5 ms de
+  orçamento; minha estimativa anterior de "98% do orçamento" estava errada, era
+  artefato de medir 1000 passos sem controlador, com o robô desabado.)
+- *Padding empilhado no mesmo ponto*: espaçar não mudou nada — a velocidade de
+  ejeção era idêntica (142.8 m/s) em todos os casos, denunciando causa
+  determinística (o plano), não colisão mútua.
+
+**Correção.** O padding passa a não participar da física: `_build_object` ganhou
+`contype=0/conaffinity=0` quando o asset tem `no_collision` (aditivo, mesmo
+padrão do `rgba`), e a task marca `asset.no_collision = not is_visible` — também
+no caminho de replay, identificando padding pela posição gravada abaixo do piso.
+
+**Verificado:** padding permanece abaixo (z ≈ −98 e caindo, nunca reentra), e o
+tempo de passo fica consistente (~0.6–0.78 ms) variando de 1 a 5 objetos de
+padding. `FULL VALIDATION: PASS`.
+
+### 1.16 Primeira execução da renderização — dois erros corrigidos
+
+**(a) `prim matching the expression needs to created before wrapping it as view`**
+— no `add_static_prop` que eu havia escrito para a mobília. Eu resolvia o USD com
+`self.resolve_data_path(...)`, sem `os.path.abspath` nem `auto_download`, ao
+contrário do padrão que funciona (`__create_object`, `isaacsim.py:540`). Com
+caminho relativo o `add_reference_to_stage` não carrega nada, o prim não é criado
+e o wrap subsequente falha com essa mensagem. Corrigido para usar
+`os.path.abspath(resolve_data_path(..., auto_download=True))` e
+`XFormPrim(prim_path=...)`.
+
+**(b) `'ObjectActor' object has no attribute 'material'`** — o `MaterialDR`
+percorre `layout.actors` e chama `set_material()` em cada `ObjectActor`, mas os
+**totes e as peças são adicionados depois**, no `reset()` desta task, ou seja,
+depois do material DR já ter rodado. Eles chegavam ao renderer sem o atributo.
+Só o Isaac lê `obj_info.material` — por isso a teleoperação em MuJoCo nunca
+quebrou e o problema só apareceu no render. Corrigido aplicando
+`_FIXED_OBJECT_MATERIAL` (valores do modo "fixed", preservando o visual autoral)
+aos totes e às peças, inclusive no caminho de replay.
+
+**Invariante adicionada ao validador (estágio 3d):** *todo* `ObjectActor` do
+layout precisa ter `.material`. Isso trava essa classe de bug — qualquer ator que
+a task adicione fora do fluxo do MaterialDR passa a ser pego offline, sem
+precisar subir o Isaac. `FULL VALIDATION: PASS`.
+
+### 1.17 Renderização — execução #2: mobília carregou, mais dois ajustes
+
+A mobília **apareceu** no Isaac (prims `/World/workspace/static_props/...`), ou
+seja, o `add_static_prop` funciona. Restavam dois problemas:
+
+**(a) Fatal: `Invalid name 'articulate_base'`.** Mesma classe do bug corrigido em
+1.8 — `get_states()` (`mujoco.py`) assumia que, se `articulated_object_joints`
+não fosse `None`, existiria um objeto articulado real com o corpo
+`articulate_base`. A mobília estática também passa pelo caminho articulated no
+MuJoCo, o que deixa essa lista **vazia mas não `None`**; o `is not None` então
+caía no `mjData.body("articulate_base")` e explodia. Corrigido com a mesma
+guarda de verdade (`if self.articulated_object_joints:`).
+
+**(b) Mobília sem textura (`Failed to create MDL shade node`).** Os USDs de
+mobília declaram seus materiais por caminho **relativo**
+(`../../../../../Materials/Base/...`), válido apenas a partir da localização
+original do asset no servidor NVIDIA. Como eu só havia baixado o `.usd` solto, os
+MDL não resolviam e o Isaac renderizava sem textura. Verificado por HTTP: subindo
+os 5 níveis a partir de `.../Assets/DigitalTwin/Assets/Warehouse/Equipment/Carts/
+TableTrolley_B/`, o caminho correto é
+`.../Assets/DigitalTwin/Materials/Base/Metals/Metal_Glossy_A.mdl` → **HTTP 200**
+(enquanto os outros níveis dão 404).
+
+Correção: o `usd_path` da mobília passa a ser a **URL remota original** (só para
+o Isaac; o MuJoCo continua usando o `mjcf_path`/malhas locais), e o
+`add_static_prop` referencia URLs (`http/https/omniverse`) **como estão**, sem
+`resolve_data_path`/`abspath`, que as mangleria. Assim os materiais relativos
+resolvem e a mobília mantém as texturas autorais.
+
+*Trade-off:* a renderização passa a exigir rede (ou o cache do Omniverse) para a
+mobília. É o mesmo padrão que o `WarehouseSuite` já usa para carregar o
+`warehouse.usd` remoto. A alternativa offline seria espelhar toda a árvore
+`Materials/` localmente na profundidade certa — bem mais trabalhoso.
+
+### 1.18 Renderização — execução #3: mobília 100× maior (unidades)
+
+**Sintoma:** a cena renderizada não tinha a mobília — aparecia só a `table` box
+padrão, sem estantes, e os totes "flutuando no ar" (justamente onde deveriam
+estar as prateleiras).
+
+**Causa.** Os USDs de mobília da NVIDIA são autorados em **centímetros**
+(`metersPerUnit = 0.01`), mas o palco do SIMPLE é em metros. O
+`add_reference_to_stage` **não converte unidades** — quem faz isso na GUI do
+Omniverse é o *metrics assembler*, escrevendo o `unitsResolve` que se vê no
+`IH_basic.usda`. Referenciando o USD cru, a mobília entrava **100× maior**:
+
+| asset | bbox nativo | sem correção | correto |
+|---|---|---|---|
+| TableTrolley | 73.9 × 224.4 × 85.5 | **metros** | 0.74 × 2.24 × 0.85 m |
+| MobileShelvingCart | 51.8 × 109.7 × 187.3 | **metros** | 0.52 × 1.10 × 1.87 m |
+
+Um trolley de 224 m engole a câmera — daí a impressão de "não tem mobília". No
+MuJoCo isso nunca apareceu porque o ×0.01 já está baked nos OBJs extraídos.
+
+**Correção.** `ArticulatedAsset` ganhou `usd_scale` (aditivo, default 1.0); a
+mobília usa `0.01`, e o `add_static_prop` aplica `set_local_scale` junto da pose
+a cada reset.
+
+*Nota de acompanhamento:* a `table` box continua na cena por design (é a
+superfície funcional onde o spatial DR posiciona as peças, com o topo casado ao
+tampo do trolley). Com a mobília na escala certa as duas passam a coincidir. Se
+ficar visualmente redundante no render, o passo seguinte é ocultar a box no
+Isaac mantendo-a no MuJoCo.
+
+### 1.19 Cor dos totes na renderização (ambos cinzas)
+
+**Causa: instancing USD.** Os dois totes renderizavam cinza e idênticos porque
+`/RootNode/bin_b04_inst` do asset SimReady é **`instanceable = True`** — a
+geometria e os materiais vivem num **protótipo compartilhado**, então ambos os
+totes herdam o material do protótipo e qualquer override por instância é
+silenciosamente ignorado.
+
+Investigação (tudo verificado, nada suposto):
+- `bin_b04_red.usd` e `bin_b04_blue.usd` são **byte-idênticos** (mesmo MD5) e
+  ambos vinculam o mesmo material `opaque__plastic__bin_b` — nenhum dos dois é
+  de fato vermelho ou azul.
+- Os MDL `Plastic_B_red.mdl` / `Plastic_B_blue.mdl` **estão corretos e
+  distintos** (`diffuse_tint` = `(0.9,0.1,0.1)` e `(0.1,0.25,0.9)`), só não são
+  referenciados por USD nenhum.
+- O material base já expõe `diffuse_tint`, então dá para tingir em runtime sem
+  trocar de material — o tote mantém a textura de plástico e ganha a cor.
+
+**Correção — `IsaacSimSimulator._tint_object`,** chamado no `__create_object`
+quando o asset tem `rgba`:
+1. **De-instancia** o subtree (`SetInstanceable(False)`), sem o que os shaders
+   nem sequer são acessíveis;
+2. define `diffuse_tint` (Color3f) em cada `UsdShade.Shader` do subtree. Casa
+   por **tipo de prim**, não por nome — o material aqui se chama
+   `opaque__plastic__bin_b`, e não bate com o glob `material_*` usado no laço
+   pré-existente.
+
+Também corrigida uma regressão minha no `totes.py`: as variantes apontavam para o
+USD **base** (eu havia forçado o nome da pasta quando os arquivos de variante
+ainda não existiam). Agora prefere `{name}.usd` com fallback para o base.
+
+**Verificado offline** (sem precisar do Isaac) montando um palco USD com os dois
+totes referenciando o asset real: após de-instanciar, 1 shader por tote fica
+acessível e **cada um recebe sua própria cor** — provando que deixaram de
+compartilhar o protótipo. `FULL VALIDATION: PASS` no lado MuJoCo.
+
+**Segunda passada — casca externa continuava cinza.** Com o tint aplicado, o
+interior e os reflexos ficaram coloridos, mas a superfície externa não. Motivo:
+`Plastic_B.mdl` é um wrapper fino de **OmniPBR** e o USD sobrescreve o shader com
+`diffuse_texture = T_Plastic_Gray_A_Albedo.png` — uma textura **literalmente
+cinza**. O `diffuse_tint` só alcançava os caminhos sem textura; o albedo externo
+continuava vindo dela. (Curiosidade confirmada na inspeção: o shader já trazia
+`diffuse_color_constant = (0.908, 0.111, 0.111)`, ou seja, o vermelho pretendido
+estava lá, mas ignorado por causa da textura.)
+
+Tentativas em runtime (tint, depois tint + limpar a textura + constante)
+**não resolveram** a casca externa. Como não é possível observar a composição do
+material dentro do renderer a partir daqui, a abordagem correta passou a ser
+**autorar o asset colorido offline e verificar o arquivo**.
+
+**Solução final — colorir o que o renderer de fato amostra.**
+`scripts/industrial/make_tote_color_variants.py` (novo) gera, de forma
+reprodutível e verificada:
+1. **Texturas de albedo recoloridas** a partir de `T_Plastic_Gray_A_Albedo.png`,
+   preservando a variação de luminância → `T_Plastic_Red_A_Albedo.png` e
+   `T_Plastic_Blue_A_Albedo.png` (RGB médio medido: `(203,25,25)` e `(25,63,216)`;
+   a original é praticamente plana — desvio 1.3 — então nada de padrão se perde).
+2. **`bin_b04_red.usd` / `bin_b04_blue.usd`** autorados referenciando a geometria
+   compartilhada (`bin_b04_inst.usd`), com o shader apontando `diffuse_texture`
+   para o PNG colorido e `diffuse_color_constant` na mesma cor, e o prim marcado
+   **não-instanciável** (override de material dentro de instância é ignorado).
+3. **Verificação embutida:** reabre o arquivo salvo e confere composto — textura
+   resolve no disco, cor correta, `normalmap`/`ORM` preservados, nada
+   instanciável. Antes os dois variantes eram byte-idênticos; agora **diferem**.
+
+Com a cor no asset, o `_tint_object` em runtime foi **removido** do engine — ele
+limpava a `diffuse_texture` e desfaria justamente essa correção. A cor agora vem
+de um único lugar por engine: o USD (Isaac) e o `rgba` de `Totes_Variants`
+(MuJoCo), ambos com os mesmos números.
+
+Para mudar o tom: ajuste `VARIANTS` no script e `Totes_Variants` no `totes.py`
+(mesmos valores), e rode o script de novo.
+
+### 1.20 O que REALMENTE resolveu a cor dos totes: **timing da vinculação**
+
+As tentativas anteriores (tint, limpar textura, autorar USD colorido) **não
+funcionaram**, e só foi possível descobrir o porquê ao rodar o Isaac localmente
+— o que passou a ser feito a partir daqui, renderizando e **medindo pixels** em
+vez de depender de inspeção visual.
+
+**O que a medição mostrou.** No stage vivo, tudo estava correto: cada tote
+referenciava seu USD colorido, `instanceable=False`, material próprio,
+`diffuse_texture` apontando para o PNG colorido com `resolve=OK`, e **zero**
+erros de MDL. Mesmo assim o render saía cinza. Alterar
+`diffuse_texture`/`diffuse_color_constant`/`diffuse_tint` no stage vivo **não
+mudava um pixel** (77 → 76 vermelhos) — ou seja, o material do próprio asset não
+é o que o renderer honra aqui.
+
+**O que funciona:** criar um material **OmniPBR novo** e vinculá-lo ao mesh com
+`strongerThanDescendants` — o mesmo padrão que o engine já usa para a mesa
+(50 → 9967 pixels vermelhos).
+
+**E o detalhe decisivo — QUANDO vincular.** O mesmo código não teve efeito nenhum
+quando chamado no `__create_object` (122 px) nem logo após o `world.reset()`
+(122 px); só funcionou aplicado **no fim do bloco de reset**, com o stage
+totalmente inicializado (**3985 px**). Por isso `__create_object` apenas
+registra a cor em `self._pending_colors`, e `step()` aplica no final do reset.
+
+Implementação: `IsaacSimSimulator._bind_color_material(prim_path, uid, rgba)`,
+alimentado por `asset.rgba` — a mesma fonte que o MuJoCo usa. Confirmado no
+render: tote **vermelho à esquerda**, **azul à direita**.
+
+### 1.21 Saturação + limpeza (estado final)
+
+Cores reforçadas em `Totes_Variants`: vermelho `(0.90, 0.02, 0.02)` e azul
+`(0.02, 0.08, 0.90)` — medido no render: 3985 → **10290** pixels vermelhos.
+
+**Limpeza:** removidos os artefatos de 1.19 que deixaram de dar a cor —
+`T_Bin_B04_{Red,Blue}_Albedo.png`, `bin_b04_{red,blue}.usd` e o script
+`make_tote_color_variants.py`. As variantes voltam a carregar o `bin_b04.usd`
+base; a cor vem só do `rgba` do asset, aplicado por engine. Uma fonte de verdade.
+
+**Armadilha que a limpeza expôs:** com o USD base (que é **instanciável**) de
+volta, o `_bind_color_material` passou a tentar vincular material em *instance
+proxy* — ilegal em USD, e o processo **segfaultava**. Corrigido des-instanciando
+o subtree antes de vincular. (Antes isso passava despercebido porque os USDs de
+variante gerados já vinham de-instanciados.)
+
+O `validate_sorting_task.py` passou a ler as cores esperadas de
+`Totes_Variants` em vez de hardcodá-las, para não ficar obsoleto ao retunar.
+
+Resumo consolidado do pipeline: [`INDUSTRIAL_IH_PIPELINE.md`](./INDUSTRIAL_IH_PIPELINE.md).
+
 ---
 
 ## 2. Como reproduzir
