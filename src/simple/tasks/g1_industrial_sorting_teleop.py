@@ -189,13 +189,15 @@ _PART_PLACE_TRIES = 200
 # `observation.object_poses` a constant shape; anything under this z is not in
 # play and must not count toward the prompt quantities or the reward.
 _HIDDEN_Z = -1.0
-# Parking slots for the padding instances. They MUST be spaced apart: spawning
-# them all on the same spot makes them deeply interpenetrate, and MuJoCo's
-# impulse response launches them back up through the workspace at ~140 m/s.
-# Spacing > object size (parts are < 0.15 m) guarantees no initial contact; from
-# there they simply free-fall away from the scene, generating no contacts.
-_PARK_X, _PARK_Y, _PARK_Z = 0.0, 0.0, -10.0
-_PARK_SPACING = 1.0
+# Parking slot for the padding instances. Padding is collision-free (see
+# `no_collision` in the engine), so the instances can share one spot without any
+# contact/impulse. Park them just below the opaque floor — below `_HIDDEN_Z` so
+# they still read as padding — and clustered, NOT at z=-10 spread out: MuJoCo's
+# shadow map covers the whole `stat.extent`, so padding far from the scene blows
+# the extent up (~12 m vs ~5 m) and thins the shadow resolution, which shows up
+# as shadow acne flickering on the floor of the VR stream.
+_PARK_X, _PARK_Y, _PARK_Z = 0.0, 0.0, -1.2
+_PARK_SPACING = 0.0
 
 # Shader params the Isaac engine reads off every ObjectActor (`obj_info.material`).
 # The MaterialDR sets these while Task.reset builds the layout, but the totes and
