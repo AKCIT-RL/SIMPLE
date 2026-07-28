@@ -90,6 +90,13 @@ _BENCH_TOP = 0.854
 # live geom contact — to count as "inside" it.
 _IN_TOTE_XY_TOL = 0.12
 
+# Contact-detection margin (m) on the tote geoms. The shelf's convex-hull
+# collision surface sits ~1-3 mm below its visual surface, so a tote placed on a
+# shelf can rest a couple mm above the hulls and never register a raw contact —
+# which broke both success detection (eval) and phase segmentation. 5 mm covers
+# the measured gaps; margin==gap means detection only, no force, physics intact.
+_TOTE_CONTACT_MARGIN = 0.005
+
 _SHELF_LEFT = "MobileShelvingCart_C05_left"
 _SHELF_RIGHT = "MobileShelvingCart_C05_right"
 _TOTE_RED = "bin_b04_red"
@@ -299,6 +306,13 @@ def _add_totes(layout: Layout) -> None:
         if key in layout.actors:
             continue
         asset = manager.load(entry["asset_id"].split(":")[-1])
+        # Report contacts up to _TOTE_CONTACT_MARGIN away so a tote resting a
+        # couple mm above a shelf's convex-hull surface still counts as "on the
+        # shelf" for reward/success (the shelf VHACD hulls sit slightly below the
+        # visual surface). margin==gap in the engine => detection only, no force,
+        # so physics is unchanged. Fixes both the eval predicate and offline
+        # phase segmentation.
+        asset.contact_margin = _TOTE_CONTACT_MARGIN
         layout.add_object(key, asset)
         actor = layout.actors[key]
         actor.set_material(dict(_FIXED_OBJECT_MATERIAL))  # MaterialDR already ran

@@ -346,6 +346,14 @@ class MujocoSimulator(Simulator):
                 # through the workspace.
                 contype=0 if getattr(actor.asset, "no_collision", False) else 1,
                 conaffinity=0 if getattr(actor.asset, "no_collision", False) else 1,
+                # Optional contact-detection margin. Set margin==gap so near
+                # contacts (up to `contact_margin`) are *reported* in mjData.contact
+                # without producing any force (the gap zone is force-free), leaving
+                # the physics identical. Used so a tote resting a couple mm above a
+                # shelf's convex-hull collision surface still registers as "on the
+                # shelf" for the reward/success predicate. Default 0.0 => unchanged.
+                margin=getattr(actor.asset, "contact_margin", 0.0),
+                gap=getattr(actor.asset, "contact_margin", 0.0),
                 # stiff contact and no oscillation
                 solref = [0.005, 2]
             )
