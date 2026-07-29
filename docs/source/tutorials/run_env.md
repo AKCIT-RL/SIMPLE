@@ -16,6 +16,41 @@ sudo apt-get install ffmpeg
 ```
 > Tips: You might install `ffmpeg` to have video generated in `libx264` format, so that the video can be directly previewed in `VSCode`.
 
+## Running without the Franka assets (G1 example)
+
+The defaults above target the Franka tabletop task (`--env-id
+simple/FrankaTabletopGrasp-v0`, `--robot-uid franka_fr3`), which needs the Franka
+robot/assets. If those aren't set up, a bare `python scripts/test_env.py` fails
+while building that robot — this is the most common first-run error.
+
+To run one of the G1 industrial environments instead — they use the `g1_sonic`
+robot and never touch the Franka assets — override the env, task, robot and
+target object:
+
+```bash
+python scripts/test_env.py \
+  --env-id simple/G1IndustrialScrewdriverToToteTeleop-v0 \
+  --task g1_industrial_screwdriver_to_tote_teleop \
+  --robot-uid g1_sonic \
+  --target-object graspnet1b:19 \
+  --sim-mode mujoco --no-webrtc
+```
+
+The four flags that steer away from Franka are `--env-id`, `--task`,
+`--robot-uid g1_sonic` and `--target-object`. (`simple/G1IndustrialScrewToToteTeleop-v0`
+with `--task g1_industrial_screw_to_tote_teleop` is an equivalent alternative.)
+
+Notes:
+- **Flags use dashes, not underscores** (Typer): `--env-id`, `--robot-uid`,
+  `--target-object`, `--sim-mode`, `--no-headless`, `--no-webrtc`. A bare
+  `--env_id` is not recognized.
+- `--sim-mode mujoco` is the lightest option (no Isaac Sim boot); the default is
+  `mujoco_isaac`, and `isaac` is the third choice.
+- On a laptop with a discrete NVIDIA GPU you may need the render-offload
+  env vars, e.g. `__NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia
+  CUDA_VISIBLE_DEVICES=0 python scripts/test_env.py ...`.
+- List every registered env id / task uid with `python scripts/list_env.py`.
+
 ## Detailed Explanations
 
 Common imports:
