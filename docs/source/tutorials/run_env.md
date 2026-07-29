@@ -51,6 +51,31 @@ Notes:
   CUDA_VISIBLE_DEVICES=0 python scripts/test_env.py ...`.
 - List every registered env id / task uid with `python scripts/list_env.py`.
 
+## Visualizing an industrial task in the Isaac warehouse
+
+To *see* an industrial task rendered in Isaac Sim's warehouse — no teleoperation,
+just the scene with the robot driven by random actions — run `test_env.py` with
+`--sim-mode isaac --no-headless` (this opens the Isaac GUI):
+
+```bash
+python scripts/test_env.py \
+  --env-id simple/G1IndustrialSortingTeleop-v0 \
+  --task g1_industrial_sorting_teleop \
+  --robot-uid g1_sonic \
+  --target-object graspnet1b:27 \
+  --sim-mode isaac --no-headless
+```
+
+Notes:
+- The warehouse scene is **baked into these tasks** via their DR config
+  (`scene_manager="warehouse"`, `room_choices=["warehouse:default"]`). The
+  `--scene-uid` flag is *not* consumed by the industrial tasks, so there is no
+  need to pass it — the task always loads `warehouse:default`.
+- Swap `--env-id` / `--task` for any industrial task, e.g.
+  `simple/G1IndustrialToteToRackTeleop-v0` / `g1_industrial_tote_to_rack_teleop`.
+- `--sim-mode isaac` boots Isaac Sim (~1 min on first launch). Use
+  `--sim-mode mujoco` instead for a quick MuJoCo-only preview without Isaac.
+
 ## Detailed Explanations
 
 Common imports:
