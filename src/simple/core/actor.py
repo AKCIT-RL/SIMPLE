@@ -126,6 +126,21 @@ class ObjectActor(Actor):
     def set_material(self, material: dict) -> None:
         self.material = material
 
+class StaticObjectActor(Actor):
+    """Actor representing a fixed, non-movable rigid object (no free joint) --
+    e.g. a shelf unit. Built via MujocoSimulator._build_static_object, which
+    is identical to _build_object except it never adds a free joint."""
+    asset: Asset
+    material: dict
+
+    def __init__(self, asset: Asset, uid: str | None = None) -> None:
+        self.uid = asset.uid if uid is None else uid
+        self.asset = asset
+        self.pose = Pose()
+
+    def set_material(self, material: dict) -> None:
+        self.material = material
+
 class ArticulatedObjectActor(Actor):
     """Actor representing an object in the simulation."""
     asset: ArticulatedAsset

@@ -58,6 +58,12 @@ class Layout:
         
         self.actors[name] = ObjectActor(asset=obj) #ActorReigstry.make("object", obj) #Actor.from_asset(obj)
 
+    def add_static_object(self, name: str, obj: Asset) -> None:
+        if name in self.actors:
+            raise ValueError(f"Actor with name '{name}' already exists in the layout.")
+
+        self.actors[name] = StaticObjectActor(asset=obj)
+
     def add_articulated_object(self, name: str, obj: ArticulatedAsset) -> None:
         if name in self.actors:
             raise ValueError(f"Actor with name '{name}' already exists in the layout.")

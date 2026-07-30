@@ -100,6 +100,24 @@ def _init_exporter(save_dir: str, task_prompt: str, robot_model, obj_names: list
     return exporter
 
 
+def _object_poses_schema(task, obj_names: list[str]) -> list[str]:
+    """Names for the fixed `observation.object_poses` schema. For tasks whose
+    tracked-object count is stochastic per reset (currently `shelf_group`),
+    returns a *fixed*, padded name list sized to the task's true upper bound
+    (`ShelfGroupDRCfg.max_total_count()`) so every episode in a recording
+    session writes the same feature shape -- frames for objects absent this
+    episode are zero-padded (see `_build_frame`). This is a hard constraint
+    of the underlying LeRobot dataset format (one fixed `features` schema per
+    save_dir, not per episode), not something a per-reset schema rebuild could
+    work around. For every other task (fixed object count), this is just
+    `obj_names` from the first reset, unchanged from prior behavior."""
+    shelf_group_dr = task.dr.get_randomizer("shelf_group")
+    if shelf_group_dr is None:
+        return obj_names
+    max_count = shelf_group_dr.cfg.max_total_count()
+    return [f"target_{i}" for i in range(max_count)]
+
+
 def _build_frame(agent, obj_names: list[str], observation, privileged_info, action):
     """Assemble one recording frame from current sim state and agent caches."""
     proprio = privileged_info["proprio"]
@@ -153,11 +171,16 @@ def _build_frame(agent, obj_names: list[str], observation, privileged_info, acti
         ),
     }
 
-    # Object poses: concatenate all object (pos + quat) in order
+    # Object poses: concatenate all object (pos + quat) in schema order.
+    # `obj_names` is the *fixed* per-session schema (see _object_poses_schema);
+    # objects absent this episode (stochastic per-reset count, e.g. shelf_group)
+    # are zero-padded rather than shifting/shrinking the feature shape.
     if obj_names:
-        obj_poses = []
-        for name in obj_names:
-            obj_poses.append(privileged_info[name])
+        zeros7 = np.zeros(7, dtype=np.float64)
+        obj_poses = [
+            np.asarray(privileged_info[name], dtype=np.float64) if name in privileged_info else zeros7
+            for name in obj_names
+        ]
         frame["observation.object_poses"] = np.concatenate(obj_poses).astype(np.float64)
 
     return frame
@@ -197,7 +220,8 @@ def main(
         headless=headless,
         max_episode_steps=max_episode_steps,
         sonic_config=sonic_config,
-        target=target
+        target=target,
+        dr_level=dr_level,
     )
     sonic_env: SonicLocoManipEnv = env.unwrapped  # type: ignore
     task = sonic_env.task
@@ -217,10 +241,21 @@ def main(
     control_dt = control_decimal * robot.sim_dt  # = 0.02 s (50 Hz)
 
     def _on_episode_reset():
-        """In recording mode, reset the WBC pipeline to a consistent initial pose,
-        skip elastic band drop, and engage the RL policy immediately."""
-        if not record:
-            return
+        """Reset the WBC pipeline to a consistent initial pose, skip the
+        elastic-band suspend/drop sequence, and engage the RL policy
+        immediately -- for every mode, not just --record.
+
+        Previously gated behind `if not record: return`, so interactive
+        (non-recording) sessions went through the full elastic-band
+        suspend-then-drop sequence instead. That sequence is still real,
+        working code (see the ctrl-freeze and settle-gated-auto-drop fixes
+        in the migration plan doc, "Real-stack validation") and is left
+        intact below for any future use that actually wants a visible
+        landing animation -- but for teleop control itself, there's no
+        reason to make the operator wait through it every episode. Matches
+        the `origin/industrial_env` branch, which generalized this the
+        same way.
+        """
         if robot.elastic_band is not None:
             robot.elastic_band.enable = False
         agent._dropping = False
@@ -257,6 +292,11 @@ def main(
 
     # Read obj_names after first reset so layout is populated by domain randomization.
     obj_names = list(sonic_env.mujoco.mj_objects.keys())
+    # Fixed per-session schema for observation.object_poses (see _object_poses_schema):
+    # equal to obj_names for fixed-object-count tasks (unchanged prior behavior),
+    # but a padded upper-bound list for tasks with a stochastic per-reset object
+    # count (currently shelf_group), so every episode's frames share one shape.
+    obj_names_schema = _object_poses_schema(task, obj_names)
 
     if record:
         # timestamp = datetime.now().strftime("%m%d%H%M%S")
@@ -265,13 +305,14 @@ def main(
         )
         exporter = _init_exporter(
             run_save_dir,
-            task.instruction, 
-            agent._dwbc_robot_model, 
-            obj_names,
+            task.instruction,
+            agent._dwbc_robot_model,
+            obj_names_schema,
             robot.joint_names
         )
         print(f"\n[Record] Exporter initialized, saving to {run_save_dir}")
-        print(f"[Record] Recording {len(obj_names)} objects: {obj_names}")
+        print(f"[Record] observation.object_poses schema: {len(obj_names_schema)} slots ({obj_names_schema})")
+        print(f"[Record] First episode has {len(obj_names)} live objects: {obj_names}")
 
     try:
         while True:
@@ -294,10 +335,23 @@ def main(
             # if "proprio" in info:
             #     agent.publish_low_state(info["proprio"])
 
-            if agent.reset_requested:
+            # Live tote-location HUD (X totes na estante, Y totes na mesa) --
+            # only for tasks that expose tote_location_counts; no-op otherwise.
+            tote_counts_fn = getattr(task, "tote_location_counts", None)
+            tote_fell = False
+            if tote_counts_fn is not None:
+                tote_counts = tote_counts_fn(mujoco_env=sonic_env.mujoco)
+                agent.hud_lines = [
+                    f"{tote_counts['shelf']} TOTES NA ESTANTE",
+                    f"{tote_counts['table']} TOTES NA MESA",
+                ]
+                tote_fell = tote_counts["ground"] > 0
+
+            if agent.reset_requested or tote_fell:
                 # Discard any in-progress recording
                 if exporter is not None and rec_state == RecordingState.RECORDING:
-                    print("[Record] Reset requested, discarding in-progress episode")
+                    reason = "tote fell on the ground" if tote_fell else "reset requested"
+                    print(f"[Record] Discarding in-progress episode ({reason})")
                     exporter.skip_and_start_new_episode()
                     # Close progress bar for discarded episode
                     if step_pbar is not None:
@@ -357,7 +411,7 @@ def main(
                             print("[Record] Teleop active, starting episode recording")
 
                     if rec_state == RecordingState.RECORDING:
-                        frame = _build_frame(agent, obj_names, **data_frame)
+                        frame = _build_frame(agent, obj_names_schema, **data_frame)
                         exporter.add_frame(frame)
                         if step_pbar is not None:
                             step_pbar.update(1)

@@ -20,11 +20,27 @@ from simple.core.object import SemanticAnnotated, SpatialAnnotated
 
 Totes_Names = {
     0: "bin_b04",
+    1: "toteweg",
+}
+
+# Visual mesh filename is not consistent across tote folders (legacy SimReady
+# naming for bin_b04 vs. our own converter output for toteweg), so resolve it
+# per-name instead of hardcoding a single filename.
+_Visual_Mesh_Filename = {
+    "bin_b04": "Bin_B04_01.obj",
+    "toteweg": "toteweg.obj",
 }
 
 
 def _estimate_stable_z_from_obj(obj_path: str, default: float = 0.12) -> float:
-    """Estimate a reasonable stable pose z-offset from the visual mesh."""
+    """Estimate a reasonable stable pose z-offset from the visual mesh.
+
+    Some source meshes (e.g. bin_b04) are authored already resting at z=0,
+    so their geometric bottom coincides with the mesh origin and -min(z) is
+    degenerately 0 -- in that case fall back to `default`. Other meshes
+    (e.g. toteweg) are authored centered on the origin, where -min(z) is a
+    real, correct offset and must not be clamped up to `default`.
+    """
     z_values: list[float] = []
     try:
         with open(obj_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -39,7 +55,10 @@ def _estimate_stable_z_from_obj(obj_path: str, default: float = 0.12) -> float:
 
     if not z_values:
         return default
-    return max(default, -min(z_values))
+    z_min = min(z_values)
+    if abs(z_min) < 1e-6:
+        return default
+    return -z_min
 
 
 class TotesAsset(Asset, SemanticAnnotated, SpatialAnnotated):
@@ -108,7 +127,14 @@ class TotesAssetManager(AssetManager):
         collision_meshes_mujoco = sorted(glob.glob(os.path.join(collision_dir, "*.obj")))
         assert collision_meshes_mujoco, f"No collision meshes found at: {collision_dir}"
 
-        visual_mesh = os.path.join(base_dir, "MJCF", "visuals", "Bin_B04_01.obj")
+        visuals_dir = os.path.join(base_dir, "MJCF", "visuals")
+        visual_filename = _Visual_Mesh_Filename.get(name)
+        if visual_filename is not None:
+            visual_mesh = os.path.join(visuals_dir, visual_filename)
+        else:
+            found = sorted(glob.glob(os.path.join(visuals_dir, "*.obj")))
+            assert found, f"No visual mesh found under: {visuals_dir}"
+            visual_mesh = found[0]
         assert os.path.exists(visual_mesh), f"Visual mesh not found: {visual_mesh}"
 
         usd_path = os.path.join(base_dir, f"{name}.usd")

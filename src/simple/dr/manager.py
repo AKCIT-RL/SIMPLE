@@ -34,6 +34,7 @@ class DRManager:
 
     def __init__(self, level,  **kwargs) -> None:
         self._dr_level = level
+        self.randomizers = {}
 
         for key, rnd in kwargs.items():
             if isinstance(rnd, RandomizerCfg):

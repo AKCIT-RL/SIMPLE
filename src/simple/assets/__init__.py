@@ -14,3 +14,4 @@ from .objaverse import ObjaverseAssetManager
 from .primitive import PrimitiveAsseManager, Primitive, Box
 from .articulate import ArticulatedAssetManager
 from .totes import TotesAssetManager
+from .fixtures import FixturesAssetManager
