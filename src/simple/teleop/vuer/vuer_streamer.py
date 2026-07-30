@@ -85,12 +85,42 @@ class VuerStreamer(BaseStreamer):
         self._toggle_data_collection_last   = False
         self._toggle_data_abort_last        = False
 
+    # --- SAFETY GUARD (DISABLED) -----------------------------------------
+    # Redundant with the televuer-level fix: third_party/televuer's
+    # get_headset_relative_wrist_poses() now falls back to CONST_* poses when
+    # the head/arm matrices are uninitialised (VR not connected yet), so the
+    # "Non-positive determinant" crash no longer happens at the source.
+    #
+    # Kept here, commented out, as a fallback: if that crash ever returns
+    # (e.g. an environment still importing an old televuer without the guard),
+    # UNCOMMENT the method below AND swap the wrist-pose line in get() for the
+    # guarded branch shown there.
+    #
+    # def _head_pose_valid(self) -> bool:
+    #     """True once the VR client is streaming a non-degenerate head pose.
+    #
+    #     Before the headset sends its first CAMERA_MOVE event, TeleVuer's
+    #     head_pose comes straight from a zero-initialised shared buffer, so its
+    #     rotation block is all-zeros (det == 0).
+    #     """
+    #     head_rot = self._tv.tvuer.head_pose[:3, :3]
+    #     det = np.linalg.det(head_rot)
+    #     return bool(np.isfinite(det)) and det > 1e-6
+    # ---------------------------------------------------------------------
+
     def get(self) -> StreamerOutput:
         """Read one frame from TeleVuer and return a StreamerOutput."""
         # ------------------------------------------------------------------
         # 1. Wrist poses — headset-relative z-up (for WristsPreProcessor)
         # ------------------------------------------------------------------
         left_wrist, right_wrist = self._tv.get_headset_relative_wrist_poses()
+        # SAFETY GUARD (disabled — see the commented _head_pose_valid above).
+        # If the "Non-positive determinant" crash returns, replace the line
+        # above with:
+        #     if self._head_pose_valid():
+        #         left_wrist, right_wrist = self._tv.get_headset_relative_wrist_poses()
+        #     else:
+        #         left_wrist = right_wrist = np.eye(4)
 
         # ------------------------------------------------------------------
         # 2. Controller state — read once via get_tele_data() for buttons
