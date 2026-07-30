@@ -82,6 +82,23 @@ Ao final, rode a validação acima para confirmar que as malhas novas estão boa
 
 ## 3. Teleoperar
 
+> **Antes da primeira teleop: certificados SSL.** O stream para o VR usa WebXR
+> (HTTPS), então o televuer precisa de um par `cert.pem`/`key.pem`. Eles **não
+> vêm no repositório** (são git-ignored) — sem eles a teleop falha no startup
+> (arquivo faltando) e, em seguida, cai no crash `Non-positive determinant`.
+> Gere uma vez, no local que o televuer procura:
+> ```bash
+> mkdir -p ~/.config/xr_teleoperate
+> openssl req -x509 -newkey rsa:2048 -nodes \
+>   -keyout ~/.config/xr_teleoperate/key.pem \
+>   -out   ~/.config/xr_teleoperate/cert.pem \
+>   -days 3650 -subj "/CN=$(hostname -I | awk '{print $1}')"
+> ```
+> No **container** (roda como root, `~`=`/root`, e o `.config` é efêmero) gere os
+> certs dentro dele ou monte por volume. A ordem de resolução completa (args →
+> env vars → `~/.config/xr_teleoperate` → fallback) está em **SSL Certificates
+> (televuer)** no `source/tutorials/teleop.md`.
+
 ```bash
 .venv/bin/python src/simple/cli/teleop_decoupled_wbc.py simple/G1IndustrialSortingTeleop-v0 \
     --sim-mode=mujoco --record --no-headless
@@ -94,7 +111,17 @@ Ao final, rode a validação acima para confirmar que as malhas novas estão boa
 **Conectar o headset**
 1. O terminal mostra: `Open https://<IP_DO_PC>:8012 in the Meta Quest browser`.
    Na primeira vez o pipeline ONNX do WBC é baixado — acompanhe os logs.
-2. Abra esse endereço no navegador do Quest.
+2. Abra no navegador do Quest. **Se o PC tem mais de uma interface de rede** — ou
+   o headset alcança o PC por um IP específico, como a sub-rede do robô
+   `192.168.123.x` — fixe o WebSocket direto na URL:
+   ```
+   https://192.168.123.2:8012/?ws=wss://192.168.123.2:8012
+   ```
+   O `?ws=wss://<IP>:<porta>` diz ao cliente Vuer **exatamente** onde abrir o
+   WebSocket, forçando o esquema seguro `wss://` (obrigatório porque a página é
+   HTTPS — um `ws://` simples seria bloqueado como *mixed content*). Sem ele, o
+   Vuer tenta adivinhar a URL a partir do host da página e pode escolher a
+   interface errada.
 3. Aceite o aviso de certificado (**Avançado → Prosseguir**) — é autoassinado.
 4. Toque em **Enter VR**. Você passa a ver pela câmera do robô.
 
