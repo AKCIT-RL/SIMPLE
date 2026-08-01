@@ -144,35 +144,101 @@ def build_psi0_vectors(
     return states, actions, prev_torso_rpy, prev_height
 
 
-def verify_layout(state: np.ndarray, action: np.ndarray, lag: int = 5, min_corr: float = 0.8) -> None:
-    """Refuse to convert unless the assumed action/state joint orderings actually hold."""
+def _track_score(a: np.ndarray, s: np.ndarray, a_base: int, s_base: int, n: int) -> float | None:
+    """Median |r| between an action block and a state block, or None if either is static.
+
+    Channels with no variance carry no evidence (an unused hand, a locked joint), so
+    they are skipped rather than counted as a mismatch.
+    """
+    corrs = []
+    for k in range(n):
+        aj, sk = a[:, a_base + k], s[:, s_base + k]
+        if aj.std() < 1e-6 or sk.std() < 1e-6:
+            continue
+        corrs.append(abs(np.corrcoef(aj, sk)[0, 1]))
+    return float(np.median(corrs)) if corrs else None
+
+
+def verify_layout(
+    state: np.ndarray,
+    action: np.ndarray,
+    lag: int = 5,
+    min_corr: float = 0.8,
+    min_margin: float = 0.15,
+) -> None:
+    """Refuse to convert unless the assumed action/state joint orderings actually hold.
+
+    The discriminating question is where right_arm sits inside the action column: at 22
+    (directly after left_arm) or at 29 (after a left-hand slot). Decide it by which
+    candidate actually tracks the measured right arm, and require a clear margin over
+    the loser.
+
+    Do NOT test this by asserting that the left-hand slot is all zeros. That holds only
+    for single-arm tasks such as OpenOven; a handover task commands both hands, and the
+    slot is legitimately non-zero.
+    """
     a, s = action[:-lag], state[lag:]
 
-    lo, hi = ACTION_BLOCKS["l_hand"], ACTION_BLOCKS["l_hand"] + 7
-    if not np.allclose(a[:, lo:hi], 0.0):
-        raise SystemExit(
-            f"layout check failed: action[{lo}:{hi}] (expected the unused left-hand slot) "
-            f"is not identically zero -- this dataset does not use the assumed action ordering."
-        )
-
+    # left_arm and waist share the same offset under either hypothesis, so they are a
+    # precondition rather than a discriminator.
     for label, a_base, s_base, n in (
         ("left_arm", ACTION_BLOCKS["l_arm"], STATE_BLOCKS["l_arm"], 7),
-        ("right_arm", ACTION_BLOCKS["r_arm"], STATE_BLOCKS["r_arm"], 7),
         ("waist", ACTION_BLOCKS["waist"], STATE_BLOCKS["waist"], 3),
     ):
-        corrs = []
-        for k in range(n):
-            aj, sk = a[:, a_base + k], s[:, s_base + k]
-            if aj.std() < 1e-6 or sk.std() < 1e-6:
-                continue
-            corrs.append(abs(np.corrcoef(aj, sk)[0, 1]))
-        if corrs and float(np.median(corrs)) < min_corr:
+        score = _track_score(a, s, a_base, s_base, n)
+        if score is not None and score < min_corr:
             raise SystemExit(
                 f"layout check failed: action[{a_base}:{a_base + n}] does not track "
-                f"state[{s_base}:{s_base + n}] for '{label}' (median |r| = "
-                f"{np.median(corrs):.2f} < {min_corr}). Joint ordering differs from the "
-                f"assumption baked into this script."
+                f"state[{s_base}:{s_base + n}] for '{label}' (median |r| = {score:.2f} "
+                f"< {min_corr}). Joint ordering differs from the assumption baked into "
+                f"this script."
             )
+
+    # the discriminator: which action offset carries the right arm
+    s_r_arm = STATE_BLOCKS["r_arm"]
+    cand = {off: _track_score(a, s, off, s_r_arm, 7) for off in (22, 29)}
+    scored = {k: v for k, v in cand.items() if v is not None}
+    if not scored:
+        raise SystemExit(
+            "layout check failed: the right arm is static in this episode, so the action "
+            "joint ordering cannot be verified. Re-run pointing at an episode with arm "
+            "motion, or pass --no-verify-layout if you have confirmed the layout yourself."
+        )
+
+    best = max(scored, key=scored.get)
+    runner_up = max((v for k, v in scored.items() if k != best), default=0.0)
+    if scored[best] < min_corr or (scored[best] - runner_up) < min_margin:
+        raise SystemExit(
+            f"layout check failed: cannot tell where the right arm sits in the action "
+            f"column. Median |r| against state[{s_r_arm}:{s_r_arm + 7}] per candidate: "
+            f"{ {k: round(v, 3) for k, v in scored.items()} }. Need the winner >= "
+            f"{min_corr} with a margin >= {min_margin} over the runner-up."
+        )
+    if best != ACTION_BLOCKS["r_arm"]:
+        raise SystemExit(
+            f"layout check failed: right arm detected at action[{best}:{best + 7}], but "
+            f"this script maps it from action[{ACTION_BLOCKS['r_arm']}:"
+            f"{ACTION_BLOCKS['r_arm'] + 7}]. Candidates: "
+            f"{ {k: round(v, 3) for k, v in scored.items()} }."
+        )
+    print(f"  right arm confirmed at action[{best}:{best + 7}] "
+          f"(median |r| per candidate: { {k: round(v, 3) for k, v in scored.items()} })")
+
+    # cross-check: the remaining block should be the left hand. Only verifiable when the
+    # task actually uses it, which is exactly the case that used to trip the old check.
+    l_hand = ACTION_BLOCKS["l_hand"]
+    lh = _track_score(a, s, l_hand, STATE_BLOCKS["l_hand"], 7)
+    if lh is None:
+        print(f"  left hand at action[{l_hand}:{l_hand + 7}] is static (task does not "
+              f"use it); nothing to cross-check")
+    elif lh < min_corr:
+        raise SystemExit(
+            f"layout check failed: action[{l_hand}:{l_hand + 7}] does not track the "
+            f"measured left hand at state[{STATE_BLOCKS['l_hand']}:"
+            f"{STATE_BLOCKS['l_hand'] + 7}] (median |r| = {lh:.2f} < {min_corr})."
+        )
+    else:
+        print(f"  left hand confirmed at action[{l_hand}:{l_hand + 7}] (median |r| = {lh:.2f})")
 
 
 def modality_dict() -> dict:
