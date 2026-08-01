@@ -117,8 +117,11 @@ def build_vectors(proprio, cmd, history_cmd, action, target_yaw, turning_flag):
     # states: match to_psi0_state_format ordering
     states = np.concatenate(
         [proprio[:, s:e] for _, s, e in STATE_SLICES] + [
-            history_cmd[:to, 3:6][::-1],  # torso_rpy
-            history_cmd[:to, 6:7]         # base height
+            # NOTE: must be [:, ::-1] (reverse the CHANNEL axis: yaw,pitch,roll ->
+            # roll,pitch,yaw), not [::-1], which reverses the TIME axis and makes
+            # state.rpy play backwards. See build_proprio_obs() for the correct form.
+            history_cmd[:to, 3:6][:, ::-1],  # torso_rpy
+            history_cmd[:to, 6:7]            # base height
         ],
         axis=1,
     ).astype(np.float32)
