@@ -9,6 +9,7 @@ installation
 run_env
 data_gen
 teleop
+televuer_debugging
 replay
 eval
 docker
