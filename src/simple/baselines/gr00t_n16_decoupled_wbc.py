@@ -162,6 +162,21 @@ class Gr00tN16DecoupledWbcAgent(SonicDecoupledWbcAgent):
                 wbc_action["q"], side="right"
             )
 
+            # Close the loop on the torso command. state.rpy / state.height are trained as
+            # the PREVIOUSLY COMMANDED torso rpy + base height, so they must track what we
+            # just executed. Leaving this frozen at its reset value makes the policy believe
+            # it is still standing upright while it squats, so it keeps commanding "go
+            # lower" until the robot collapses.
+            self._last_cmd_torso_rpyh = np.array(
+                [
+                    action_cmd["target_upper_body_pose"]["waist_roll_joint"],
+                    action_cmd["target_upper_body_pose"]["waist_pitch_joint"],
+                    action_cmd["target_upper_body_pose"]["waist_yaw_joint"],
+                    np.asarray(action_cmd["base_height_command"]).reshape(-1)[0],
+                ],
+                dtype=np.float32,
+            )
+
             # createa a new ActionCmd for the g1_sonic robot
             action_cmd = ActionCmd(
                 "decoupled_wbc",
