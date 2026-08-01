@@ -90,6 +90,9 @@ def _is_valid_se3(mat: np.ndarray, name: str) -> bool:
 def _mat_str(mat: np.ndarray) -> str:
     """Compact 2-line representation of position and axis-angle."""
     pos  = mat[:3, 3]
+    det  = np.linalg.det(mat[:3, :3])
+    if not np.isfinite(det) or np.isclose(det, 0.0, atol=1e-6):
+        return f"  pos [x={pos[0]:+.3f}  y={pos[1]:+.3f}  z={pos[2]:+.3f}]   rpy [not yet valid — det={det:.4f}]"
     from scipy.spatial.transform import Rotation as R
     rpy  = R.from_matrix(mat[:3, :3]).as_euler("xyz", degrees=True)
     return (
