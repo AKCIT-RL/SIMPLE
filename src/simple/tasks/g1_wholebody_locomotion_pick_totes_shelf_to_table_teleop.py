@@ -51,6 +51,15 @@ _TABLE_SIZE = (1.2, 0.8, 0.1)  # not yet confirmed against real reach requiremen
 _ROBOT_SPAWN_POSITION = [0.0, 0.7, 0.0]
 _ROBOT_SPAWN_QUATERNION = [1.0, 0.0, 0.0, 0.0]
 
+# Max tilt (degrees) between a tote's local +Z axis and world +Z for it to
+# still count as "upright" -- i.e. resting on the same base face it uses on
+# the shelf (see TotesAsset.stable_poses in assets/totes.py, always identity
+# quat, and ShelfGroupDR._yaw_quat, which only ever randomizes yaw). Eyeballed
+# placeholder, not yet calibrated against a real teleop delivery -- revisit at
+# Stop Point 3 of the VR guide (docs/teleop_simple_study/teleop_shelf_to_table_vr_guide.md).
+_STABLE_TILT_TOLERANCE_DEG = 15.0
+_WORLD_UP = np.array([0.0, 0.0, 1.0])
+
 
 @TaskRegistry.register("g1_wholebody_locomotion_pick_totes_shelf_to_table_teleop")
 class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
@@ -247,50 +256,51 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
         state_dict.update({"live_targets": self._live_target_keys()})
         return state_dict
 
+    def _tote_is_upright(self, key: str) -> bool:
+        """True if tote `key`'s local +Z axis is within
+        `_STABLE_TILT_TOLERANCE_DEG` of world +Z -- i.e. resting on the same
+        base face it uses on the shelf, not tipped/rotated onto a side.
+        Equivalent to comparing against the asset's `stable_poses[0]`
+        (always identity for toteweg, see assets/totes.py) but yaw-invariant,
+        since only tilt away from upright should count as unstable (yaw is
+        already unconstrained on the shelf itself, see ShelfGroupDR).
+        Reads the live pose synced every step by MujocoSimulator.step()
+        (engines/mujoco.py), not a stale spawn-time pose.
+        """
+        quat = self.layout.actors[key].pose.quaternion
+        rot = t3d.quaternions.quat2mat(np.array(quat, dtype=np.float64))
+        local_z_in_world = rot[:, 2]
+        cos_tilt = np.dot(local_z_in_world, _WORLD_UP)
+        return cos_tilt >= np.cos(np.deg2rad(_STABLE_TILT_TOLERANCE_DEG))
+
     def check_any_tote_on_table(self, *args, **kwargs) -> bool:
-        """True if any spawned tote is in contact with the table (delivery
-        goal: the robot only needs to bring *a* tote, not all of them)."""
+        """True if any spawned tote is resting stably on the table -- in
+        contact with it AND upright (delivery goal: the robot only needs to
+        bring *a* tote, not all of them, but it has to land right-side-up,
+        not tipped over or balanced on an edge)."""
+        return self.tote_location_counts(*args, **kwargs)["table"] > 0
+
+    def tote_location_counts(self, *args, **kwargs) -> Dict[str, int]:
+        """Single contact-scan classifying every live tote by what it's
+        currently touching: 'shelf' (corridor0), 'table' (only if also
+        upright, see `_tote_is_upright` -- a tote merely touching the table
+        while tipped over isn't counted here, same as a tote touching
+        nothing tracked), or 'ground' (fell off). Used both for the live HUD
+        (X totes na estante / Y totes na mesa) and for ground-fall episode
+        discarding -- one scan instead of separate `check_*` passes over the
+        same contact list.
+        """
         mujoco_env = kwargs.get("mujoco_env", None)
-        if mujoco_env is None:
-            return False
+        counts = {"shelf": 0, "table": 0, "ground": 0}
+        live_keys = self._live_target_keys()
+        if not live_keys or mujoco_env is None:
+            return counts
 
         # Body names follow MujocoSimulator's duplicate-label disambiguation
         # (src/simple/engines/mujoco.py): every spawned tote shares asset
         # label "toteweg", so each actual body is "toteweg_{layout_key}".
-        live_body_names = {f"toteweg_{key}" for key in self._live_target_keys()}
-        if not live_body_names:
-            return False
-
-        mj_physics_data = mujoco_env.mjData
-        mj_physics_model = mujoco_env.mjModel
-
-        for i_contact in range(mj_physics_data.ncon):
-            contact = mj_physics_data.contact[i_contact]
-            g1 = mj_physics_model.geom(contact.geom1)
-            g2 = mj_physics_model.geom(contact.geom2)
-            body1 = mj_physics_model.body(g1.bodyid).name
-            body2 = mj_physics_model.body(g2.bodyid).name
-
-            body1_is_tote = any(name in body1 for name in live_body_names)
-            body2_is_tote = any(name in body2 for name in live_body_names)
-            if (body1_is_tote and "table" in body2) or (body2_is_tote and "table" in body1):
-                return True
-        return False
-
-    def tote_location_counts(self, *args, **kwargs) -> Dict[str, int]:
-        """Single contact-scan classifying every live tote by what it's
-        currently touching: 'shelf' (corridor0), 'table', or 'ground'
-        (fell off). A tote touching nothing tracked here (e.g. mid-air,
-        held in the robot's hand) isn't counted in any bucket. Used both
-        for the live HUD (X totes na estante / Y totes na mesa) and for
-        ground-fall episode discarding -- one scan instead of three
-        separate `check_*` passes over the same contact list.
-        """
-        mujoco_env = kwargs.get("mujoco_env", None)
-        counts = {"shelf": 0, "table": 0, "ground": 0}
-        live_body_names = {f"toteweg_{key}" for key in self._live_target_keys()}
-        if not live_body_names or mujoco_env is None:
-            return counts
+        body_name_by_key = {key: f"toteweg_{key}" for key in live_keys}
+        live_body_names = set(body_name_by_key.values())
 
         mj_physics_data = mujoco_env.mjData
         mj_physics_model = mujoco_env.mjModel
@@ -308,9 +318,11 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
                 if tote_name in body2:
                     tote_contacts[tote_name].add(body1)
 
-        for others in tote_contacts.values():
+        for key, body_name in body_name_by_key.items():
+            others = tote_contacts[body_name]
             if any("table" in o for o in others):
-                counts["table"] += 1
+                if self._tote_is_upright(key):
+                    counts["table"] += 1
             elif any("corridor0" in o for o in others):
                 counts["shelf"] += 1
             elif any(o == "ground" for o in others):
@@ -322,12 +334,46 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
         ground -- signals the episode should be discarded, not saved."""
         return self.tote_location_counts(*args, **kwargs)["ground"] > 0
 
+    def check_hand_object_contact(self, *args, **kwargs) -> bool:
+        """True if any live tote is still in contact with a hand -- mirrors
+        `check_hand_object_contact` in the between_tables task, generalized
+        to "any" tote the same way `check_any_tote_on_table` is (this task
+        has no single fixed `target`). Used to require an actual release
+        before delivery counts, not just the tote resting against the table
+        while still gripped/pressed by the hand."""
+        mujoco_env = kwargs.get("mujoco_env", None)
+        if mujoco_env is None:
+            return False
+
+        live_body_names = {f"toteweg_{key}" for key in self._live_target_keys()}
+        if not live_body_names:
+            return False
+
+        mj_physics_data = mujoco_env.mjData
+        mj_physics_model = mujoco_env.mjModel
+
+        for i_contact in range(mj_physics_data.ncon):
+            contact = mj_physics_data.contact[i_contact]
+            g1 = mj_physics_model.geom(contact.geom1)
+            g2 = mj_physics_model.geom(contact.geom2)
+            body1 = mj_physics_model.body(g1.bodyid).name
+            body2 = mj_physics_model.body(g2.bodyid).name
+
+            body1_is_tote = any(name in body1 for name in live_body_names)
+            body2_is_tote = any(name in body2 for name in live_body_names)
+            if (body1_is_tote and "hand" in body2) or (body2_is_tote and "hand" in body1):
+                return True
+        return False
+
     def check_success(self, info: dict[str, Any], *args, **kwargs) -> bool:
         reward = self.compute_reward(info, *args, **kwargs)
         return reward >= self.success_criteria
 
     def compute_reward(self, info: dict[str, Any], *args, **kwargs) -> float:
-        if self.check_any_tote_on_table(*args, **kwargs):
+        is_tote_on_table = self.check_any_tote_on_table(*args, **kwargs)
+        is_tote_contacted_by_hand = self.check_hand_object_contact(*args, **kwargs)
+
+        if is_tote_on_table and not is_tote_contacted_by_hand:
             self.reward += 0.02
         else:
             self.reward = 0.0

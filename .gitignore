@@ -84,6 +84,7 @@ third_party/unitree_sim_isaaclab/
 artifacts/
 notes.md
 playgrounds/
+CLAUDE.md
 .test-output/
 typings
 MUJOCO_LOG.TXT
@@ -94,3 +95,4 @@ docs/teleop_simple_study/
 media_gen/
 isaac_resources/
 third_party/usd2mjcf/.venv/
+weglog/
