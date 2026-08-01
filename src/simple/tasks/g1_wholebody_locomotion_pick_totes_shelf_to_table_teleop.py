@@ -49,7 +49,7 @@ _TABLE_SIZE = (1.2, 0.8, 0.1)  # not yet confirmed against real reach requiremen
 # just reading) -- reintroducing that coupling would reopen exactly what
 # Phase 2 decided against (a SceneManager/scene DR for this corridor).
 _ROBOT_SPAWN_POSITION = [0.0, 0.7, 0.0]
-_ROBOT_SPAWN_QUATERNION = [1.0, 0.0, 0.0, 0.0]
+_ROBOT_SPAWN_QUATERNION = [0.0, 0.0, 0.0, 1.0]  # yaw 180 deg (MuJoCo wxyz convention)
 
 # Max tilt (degrees) between a tote's local +Z axis and world +Z for it to
 # still count as "upright" -- i.e. resting on the same base face it uses on

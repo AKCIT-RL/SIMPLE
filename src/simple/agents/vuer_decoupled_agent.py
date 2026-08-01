@@ -367,9 +367,20 @@ class VuerDecoupledAgent(SonicWbcAgent):
 
         is_first_step = self._cached_target_q is None
         default_upper = self._dwbc_robot_model.get_initial_upper_body_pose()
+        # DEFAULT_NAV_CMD's target_yaw (index 3) is hardcoded to 0.0 -- this
+        # goal is active for ~2s every episode (until robot.stabilized
+        # latches), which flips G1GearWbcPolicy.use_teleop_policy_cmd True
+        # and feeds its yaw PD controller a target_yaw=0 error against
+        # whatever yaw the task actually spawned the robot at, causing it
+        # to spin toward world yaw 0 before real teleop commands ever take
+        # over. Use the robot's live current yaw instead so the PD sees
+        # zero error and the robot holds its spawn orientation throughout
+        # the stabilize phase.
+        stabilize_nav_cmd = np.asarray(DEFAULT_NAV_CMD, dtype=np.float64).copy()
+        stabilize_nav_cmd[3] = self._current_base_yaw()
         goal = {
             "target_upper_body_pose":              default_upper,
-            "navigate_cmd":                        np.asarray(DEFAULT_NAV_CMD),
+            "navigate_cmd":                        stabilize_nav_cmd,
             "base_height_command":                 np.atleast_1d(np.asarray(DEFAULT_BASE_HEIGHT)),
             "target_time":                         t_now + (2.0 if is_first_step else 1 / self._control_frequency),
             "interpolation_garbage_collection_time": t_now - 2 / self._control_frequency,
@@ -534,6 +545,15 @@ class VuerDecoupledAgent(SonicWbcAgent):
             obs_tensor=wbc_action["obs_tensor"],
         )
 
+    def _current_base_yaw(self) -> float:
+        """Robot's current world-frame base yaw, read live from `floating_base_pose`
+        (MuJoCo wxyz quaternion convention)."""
+        quat = self.robot.prepare_obs()["floating_base_pose"][3:7]  # (w, x, y, z)
+        return float(np.arctan2(
+            2.0 * (quat[0] * quat[3] + quat[1] * quat[2]),
+            1.0 - 2.0 * (quat[2] ** 2 + quat[3] ** 2),
+        ))
+
     def reset_policy(self) -> None:
         """Reset the WBC pipeline for a new episode."""
         t_now = time.monotonic()
@@ -550,8 +570,15 @@ class VuerDecoupledAgent(SonicWbcAgent):
         self._wbc_settle_ticks     = 0
         self._dropping             = False
 
-        # Reset VuerStreamer internal state (height, yaw, edge detectors)
-        self._teleop_policy.teleop_streamer.body_streamer.reset_status()
+        # Reset VuerStreamer internal state (height, yaw, edge detectors).
+        # target_yaw must start at the robot's actual spawn yaw -- not a
+        # hardcoded 0.0 -- otherwise the lower-body policy's yaw PD
+        # controller (G1GearWbcPolicy) reads a spurious error against
+        # whatever yaw the task spawned the robot at and spins it back
+        # toward world yaw 0 right after reset.
+        self._teleop_policy.teleop_streamer.body_streamer.reset_status(
+            initial_yaw=self._current_base_yaw()
+        )
 
     def publish_low_state(self, proprio) -> None:
         # No Unitree bridge needed for simulation

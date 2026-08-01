@@ -49,7 +49,7 @@ class VuerStreamer(BaseStreamer):
 
     # Navigation constants (match PicoStreamer)
     _DEAD_ZONE        = 0.1
-    _MAX_LINEAR_VEL   = 0.5   # m/s
+    _MAX_LINEAR_VEL   = 0.7   # m/s
     _MAX_ANGULAR_VEL  = 1.0   # rad/s
     _CONTROL_DT       = 1.0 / 50.0  # fixed 50 Hz call-rate assumption
 
@@ -76,10 +76,18 @@ class VuerStreamer(BaseStreamer):
         # Lifecycle managed by VuerDecoupledAgent (calls tv_wrapper.close()).
         pass
 
-    def reset_status(self) -> None:
-        """Reset internal state — called on episode reset."""
+    def reset_status(self, initial_yaw: float = 0.0) -> None:
+        """Reset internal state — called on episode reset.
+
+        `target_yaw` is a world-frame heading the yaw PD controller in
+        `G1GearWbcPolicy` tracks (see `g1_gear_wbc_policy.py`); it must start
+        at the robot's actual spawn yaw, not always 0.0 -- otherwise, on any
+        task whose robot spawn orientation isn't identity, the controller
+        reads a spurious yaw error at episode start and spins the robot back
+        toward world yaw 0 ("the old orientation").
+        """
         self.current_base_height = self._HEIGHT_DEFAULT
-        self.target_yaw = 0.0
+        self.target_yaw = initial_yaw
         self._last_valid_left_wrist = np.eye(4, dtype=np.float64)
         self._last_valid_right_wrist = np.eye(4, dtype=np.float64)
         self._last_pose_warning_time = 0.0
