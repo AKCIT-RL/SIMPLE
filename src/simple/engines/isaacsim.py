@@ -560,12 +560,24 @@ class IsaacSimSimulator(Simulator):
         isaacsim_stage.add_reference_to_stage(usd_path=object_usd_path, prim_path=object_prim_path)
 
         obj_xform = XFormPrim(prim_path=object_prim_path)
+        # Only toteweg-style assets (authored/converted through our own
+        # usd2mjcf pipeline) bake a physics schema onto a `Meshes` child that
+        # needs explicitly disabling here (Isaac never owns physics in this
+        # pipeline -- MuJoCo does, see sim_mode=mujoco_isaac). Raw SimReady
+        # assets like bin_b04 have no `Meshes` prim at all (their geometry
+        # sits behind an `instanceable` reference, invisible to a plain
+        # GetPrimAtPath) and default their PhysicsVariant to "None" -- i.e.
+        # nothing to disable. Guard on existence instead of assuming the
+        # path, confirmed by dumping bin_b04's USD layers directly (see
+        # docs/source/tutorials/isaac_warehouse_rendering.md).
         geom_prim_path = f'{object_prim_path}/Meshes'
-        obj_geom = GeometryPrim(prim_path=geom_prim_path)
-        obj_rigid = RigidPrim(prim_path=geom_prim_path)
-        obj_rigid.disable_rigid_body_physics()
-        obj_collision_geom = GeometryPrim(f"{geom_prim_path}/collision")
-        obj_collision_geom.set_collision_enabled(False)
+        stage = omni.usd.get_context().get_stage()
+        if stage.GetPrimAtPath(geom_prim_path).IsValid():
+            obj_geom = GeometryPrim(prim_path=geom_prim_path)
+            obj_rigid = RigidPrim(prim_path=geom_prim_path)
+            obj_rigid.disable_rigid_body_physics()
+            obj_collision_geom = GeometryPrim(f"{geom_prim_path}/collision")
+            obj_collision_geom.set_collision_enabled(False)
 
         usd_prim = isaacsim_prims.get_prim_at_path(object_prim_path)
         semantics=[("prim", f"{obj_id}")]

@@ -96,15 +96,35 @@ rodar os dois scripts acima (ver `README.md`/`CLAUDE.md` da raiz do repo).
 
 ### 1.3. Confirmar que o Isaac Sim 4.5 está instalado e acessível
 
-O `render-decoupled-wbc`/`replay-decoupled-wbc` importam módulos `omni.*`/
-`isaacsim.*` (Isaac Sim precisa estar instalado e no `PYTHONPATH`/ambiente
-usado). Confirme com:
+`isaacsim[all,extscache]==4.5.0` é dependência base do projeto
+(`pyproject.toml:9`), instalada pelo `setup_python_env.sh`. Primeiro
+confirme que o pacote está no venv:
 
 ```bash
-python -c "import omni.isaac.core; import isaacsim.core.prims; print('ok')"
+uv pip list --python .venv/bin/python | grep -i isaacsim
 ```
 
-Se isso falhar, revise a instalação do Isaac Sim 4.5 antes de prosseguir —
+**Não** teste com `python -c "import omni.isaac.core"` direto — a maior
+parte de `omni.*`/`isaacsim.*` só fica importável **depois** que o processo
+Kit é iniciado via `SimulationApp(...)` (é ele quem carrega as extensões
+dinamicamente; ver `src/simple/engines/isaac_app.py` e
+`src/simple/envs/base_dual_env.py:83-88`). Um `import` direto falha com
+`ModuleNotFoundError: No module named 'omni.isaac'` mesmo com tudo instalado
+corretamente — isso não é sinal de instalação quebrada. O teste real é:
+
+```bash
+python -c "
+from omni.isaac.kit import SimulationApp
+app = SimulationApp({'headless': True})
+import omni.isaac.core
+import isaacsim.core.prims
+print('ok')
+app.close()
+"
+```
+
+(demora dezenas de segundos — o Kit precisa subir o processo inteiro). Se
+isso falhar, revise a instalação do Isaac Sim 4.5 antes de prosseguir —
 esse passo é independente das mudanças deste guia.
 
 ### 1.4. Localizar o USD do ambiente Warehouse (SimReady)
@@ -230,7 +250,8 @@ um pano de fundo, sem colisão.
 
 ## 5. Checklist de validação
 
-- [ ] `import omni.isaac.core` funciona no ambiente da máquina de destino.
+- [ ] O smoke test com `SimulationApp` do passo 1.3 funciona no ambiente da
+      máquina de destino.
 - [ ] Passo 3.1 roda sem `AttributeError`/crash no reset.
 - [ ] `corridor0` (prateleiras/corredor) visível na viewport no passo 3.1.
 - [ ] Passo 3.2: Warehouse visível ao redor da cena, sem sobrepor objetos da
@@ -257,3 +278,13 @@ um pano de fundo, sem colisão.
   pelo Asset Browser dentro do próprio Isaac Sim primeiro.
 - **Erro ao rodar sem GPU / sem Isaac Sim instalado**: esperado — este
   pipeline só roda numa máquina com Isaac Sim 4.5 + GPU RTX de verdade.
+- **`ModuleNotFoundError: No module named 'omni.isaac'` num `import` direto**:
+  não é erro — `omni.*`/`isaacsim.*` só carregam depois de
+  `SimulationApp(...)` iniciar o processo Kit. Não teste com `import
+  omni.isaac.core` isolado; use o smoke test do passo 1.3.
+- **`curobo` falha ao compilar com `RuntimeError: The detected CUDA version
+  (X) mismatches the version that was used to compile PyTorch (12.8)`**: o
+  `nvcc` do `PATH` não é a mesma versão usada pelo wheel do PyTorch (índice
+  `cu128`, `pyproject.toml:62`). Exporte `CUDA_HOME`/`PATH`/`LD_LIBRARY_PATH`
+  para uma instalação do CUDA Toolkit 12.8 antes de rodar
+  `install_curobo.sh` (ver `docs/source/troubleshooting.md`).

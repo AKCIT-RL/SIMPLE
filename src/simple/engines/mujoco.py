@@ -616,6 +616,23 @@ class MujocoSimulator(Simulator):
             self.joints[joint_name].qvel = 0
             self.joints[joint_name].qacc = 0
 
+    def mj_body_name(self, objtype: str) -> str:
+        """MuJoCo body name for a layout actor key (e.g. "target_0"),
+        mirroring the duplicate-label disambiguation applied in
+        _setup_scene/_build_object (self._dup_object_labels): bare asset
+        label unless multiple live actors share it, in which case
+        f"{label}_{objtype}". External callers that need to address a
+        specific object's MuJoCo body/joint by name (e.g. replay scripts
+        restoring recorded object poses) must go through this rather than
+        assuming the bare asset label -- with several same-asset instances
+        (e.g. multiple "bin_b04" totes), the bare label is ambiguous/missing.
+        """
+        actor = self.task.layout.actors[objtype]
+        label = actor.asset.uid
+        if isinstance(actor.asset, SemanticAnnotated):
+            label = actor.asset.label
+        return f"{label}_{objtype}" if label in self._dup_object_labels else label
+
     def set_object_poses(self, obj_names, obj_positions, obj_orientations):
         for _, (name, p, q) in enumerate(zip(obj_names, obj_positions, obj_orientations)):
             self.mjData.joint(f"{name}_joint").qpos = np.concatenate([p, q], axis=0)

@@ -294,7 +294,11 @@ def main(
                 obs, info = env.reset()
 
             obj_names_labels = list(sonic_env.mujoco.mj_objects.keys())
-            obj_names = list(sonic_env.task.layout.actors[i].asset.name.replace(" ","_") for i in obj_names_labels)
+            # MuJoCo body/joint name per object, not the raw asset name --
+            # with several same-asset instances (e.g. multiple "bin_b04"
+            # totes spawned by shelf_group), the raw asset name collides and
+            # doesn't match any real joint (see MujocoSimulator.mj_body_name).
+            obj_names = list(sonic_env.mujoco.mj_body_name(i) for i in obj_names_labels)
             num_objects = len(obj_names_labels)
 
             # Init exporter after first reset so obj_names are available
