@@ -38,7 +38,7 @@ import simple
 import simple.scenes
 # from simple.core import sensors
 import simple.sensors
-from simple.core.actor import ObjectActor, VisualFrame, VisualGrasp, ArticulatedObjectActor
+from simple.core.actor import ObjectActor, StaticObjectActor, VisualFrame, VisualGrasp, ArticulatedObjectActor
 from simple.core.robot import Robot
 from simple.core.simulator import Simulator
 from simple.core.task import Task
@@ -205,6 +205,15 @@ class IsaacSimSimulator(Simulator):
 
     SCENE_PRIM_PATH = "/World/scene"
 
+    # Purely-visual backdrop (e.g. SimReady Warehouse), see _setup_background.
+    # Fixed placeholder pose -- tune per backdrop asset by inspecting the
+    # first rendered frame; not derived from any task geometry since the
+    # backdrop has no collision/alignment requirement, only "looks right".
+    BACKGROUND_PRIM_PATH = "/World/background"
+    BACKGROUND_POSITION = (0.0, 0.0, 0.0)
+    BACKGROUND_ORIENTATION_WXYZ = (1.0, 0.0, 0.0, 0.0)
+    BACKGROUND_SCALE = (1.0, 1.0, 1.0)
+
     def __init__(self, task:Task, render_hz: int=30, headless: bool=False) -> None:
         self._config_isaac()
         # self.render_hz = render_hz # @deprecated
@@ -276,7 +285,7 @@ class IsaacSimSimulator(Simulator):
         self.current_visible_objects = []
         # object_shader_params = copy.deepcopy(self.task.layout.material_info["object_shader_params"])
         for obj_name, obj_info in self.task.layout.actors.items():
-            if not isinstance(obj_info, ObjectActor) and not isinstance(obj_info, ArticulatedObjectActor):
+            if not isinstance(obj_info, (ObjectActor, StaticObjectActor, ArticulatedObjectActor)):
                 continue
             
             if isinstance(obj_info, ArticulatedObjectActor):
@@ -327,18 +336,62 @@ class IsaacSimSimulator(Simulator):
         self.add_cameras()
         self.add_lights()
 
+        self._setup_background()
+
         self.__pre_add_objects()
         self.spheres = None
 
+    def _resolve_background_usd(self) -> str | None:
+        """USD to reference as a purely visual backdrop (e.g. the Isaac Sim
+        SimReady Warehouse environment) for tasks that build their own fixed
+        scenario geometry instead of using `layout.scene`/SceneManager (see
+        `__update_scene`). Never given collision -- physics for those tasks
+        runs entirely in MuJoCo (`sim_mode=mujoco_isaac`), so the backdrop is
+        just what the render sees behind/around the task's own fixtures.
+        Priority: task metadata > env var > none (no backdrop, current
+        behavior for every other task is unaffected).
+        """
+        from_metadata = self.task.metadata.get("isaac_background_usd")
+        if from_metadata:
+            return from_metadata
+        return os.environ.get("SIMPLE_ISAAC_BACKGROUND_USD") or None
+
+    def _setup_background(self) -> None:
+        bg_path = self._resolve_background_usd()
+        if not bg_path:
+            return
+
+        prim_path = f"{self.BACKGROUND_PRIM_PATH}"
+        isaacsim_stage.add_reference_to_stage(usd_path=bg_path, prim_path=prim_path)
+
+        bg_xform = XFormPrim(prim_path=prim_path)
+        bg_xform.set_local_pose(
+            list(self.BACKGROUND_POSITION), list(self.BACKGROUND_ORIENTATION_WXYZ)
+        )
+        bg_prim = self.world.stage.GetPrimAtPath(prim_path)
+        if bg_prim.GetAttribute("xformOp:scale"):
+            bg_prim.GetAttribute("xformOp:scale").Set(
+                Gf.Vec3d(*[float(s) for s in self.BACKGROUND_SCALE])
+            )
+
     def __update_scene(self, move_surface_to_origin=True):
-        scene_uid = self.task.layout.scene.uid
+        # Tasks that build their own fixed-geometry scenario (e.g. the tote
+        # shelf-to-table corridor) never populate `layout.scene` on purpose
+        # -- see the task's own dr_cfgs comment -- so there's no HSSD room to
+        # sync here. Still apply any `table`/`table2` primitives the task
+        # added directly, then bail before touching HSSD-only state.
+        scene = getattr(self.task.layout, "scene", None)
+        if scene is None:
+            self.__update_tables()
+            return
+
+        scene_uid = scene.uid
 
         for uid, (_scene,_) in self.scenes.items():
             if scene_uid != uid:
                 _scene.GetAttribute("visibility").Set("invisible")
                 # scene.GetAttribute("xformOp:translate").Set((0, 0, 0))
 
-        scene = self.task.layout.scene
         assert isinstance(scene, HssdSuite), "not supported scene type yet"
 
         scene_prim_path = f"{self.SCENE_PRIM_PATH}/s_{scene.uid.replace(':', '_')}"
@@ -422,6 +475,9 @@ class IsaacSimSimulator(Simulator):
 
         scene_prim.GetAttribute("visibility").Set("visible")
 
+        self.__update_tables()
+
+    def __update_tables(self) -> None:
         table_box = self.task.layout.actors.get("table")
         if table_box is not None:
             self._setup_table(f"{self.workspace_prim_path}/table_cuboid", table_box)
@@ -568,11 +624,16 @@ class IsaacSimSimulator(Simulator):
 
         # object_prim_path = obj["xform"].prim_path
         # object_shader_param = object_shader_params.pop()
-        for shader_path in isaacsim_prims.find_matching_prim_paths(f'{obj["object_prim_path"]}/Looks/material_*/material_*'):
-            shader = UsdShade.Shader(isaacsim_prims.get_prim_at_path(shader_path))
-            # shader.SetSourceAsset('OmniPBR.mdl')
-            for key in ['reflection_roughness_constant', 'metallic_constant', 'specular_level']:
-                shader.CreateInput(key, Sdf.ValueTypeNames.Float).Set(obj_info.material[key]) # type:ignore object_shader_param[key]
+        # StaticObjectActor (e.g. corridor0) only sets `.material` via
+        # set_material(), never in __init__ -- skip shader override when the
+        # task never called it (getattr, not obj_info.material directly).
+        material_info = getattr(obj_info, "material", None)
+        if material_info is not None:
+            for shader_path in isaacsim_prims.find_matching_prim_paths(f'{obj["object_prim_path"]}/Looks/material_*/material_*'):
+                shader = UsdShade.Shader(isaacsim_prims.get_prim_at_path(shader_path))
+                # shader.SetSourceAsset('OmniPBR.mdl')
+                for key in ['reflection_roughness_constant', 'metallic_constant', 'specular_level']:
+                    shader.CreateInput(key, Sdf.ValueTypeNames.Float).Set(material_info[key]) # type:ignore object_shader_param[key]
 
     def step(self, mujoco_env = None):
         if not self.is_isaac_reset:

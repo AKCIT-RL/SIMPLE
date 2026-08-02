@@ -190,8 +190,20 @@ def main(
     record: Annotated[bool, typer.Option()] = False,
     save_dir: Annotated[str, typer.Option()] = "data/render_decoupled_wbc",
     dr_level: Annotated[int, typer.Option()] = 0,
+    isaac_background_usd: Annotated[
+        str | None, typer.Option(help=(
+            "USD path/URL referenced as a purely visual Isaac Sim backdrop "
+            "(e.g. the SimReady Warehouse environment), for tasks that build "
+            "their own scenario geometry instead of layout.scene. Accepts a "
+            "local absolute path or an omniverse:// Nucleus URL. No effect "
+            "in mujoco-only sim modes."
+        ))
+    ] = None,
 ):
     """Replay recorded teleop dataset with Isaac Sim rendering."""
+    if isaac_background_usd:
+        os.environ["SIMPLE_ISAAC_BACKGROUND_USD"] = isaac_background_usd
+
     from gear_sonic.utils.mujoco_sim.configs import SimLoopConfig
 
     # Default save_dir: append _isaac to data_dir
