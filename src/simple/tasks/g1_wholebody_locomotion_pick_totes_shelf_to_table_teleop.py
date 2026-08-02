@@ -41,18 +41,36 @@ _TABLE_HEIGHT = 0.65
 _TABLE_ROTATION_Z = np.pi / 2
 _TABLE_SIZE = (1.2, 0.8, 0.1)  # not yet confirmed against real reach requirements, see plan doc
 
-# Fixed robot spawn at the aisle's Y midline (between the two shelf bands,
-# y in [-0.80,-0.14] for r1 and [1.52,2.07] for l1/l3); x=0.0 sits near the
-# boundary between the l-block's and r1's x ranges. Placeholder -- not yet
-# confirmed against real reach/approach distance to either row, only
-# verified (by real execution) to not spawn inside shelf/tote geometry and
-# to keep physics stable. Set directly here rather than via `spatial` DR:
-# SpatialDR unconditionally reads `layout.scene.table`, which only exists
-# when a `scene` DR is also configured (confirmed by real execution, not
-# just reading) -- reintroducing that coupling would reopen exactly what
-# Phase 2 decided against (a SceneManager/scene DR for this corridor).
-_ROBOT_SPAWN_POSITION = [0.0, 0.7, 0.0]
-_ROBOT_SPAWN_QUATERNION = [0.0, 0.0, 0.0, 1.0]  # yaw 180 deg (MuJoCo wxyz convention)
+# Simplified layout: only l1/l3 spawn totes now (r1/r2/r3 replaced by plain
+# gray boxes, see _R_BAND_BOX_SPECS below); robot spawns facing them
+# directly instead of centered in the aisle. x=-1.996 is the center of
+# l1+l3's combined span (l1 x in [-1.9961,-0.1768], l3 x in
+# [-3.8153,-1.9961], see SHELF_SPECS); y=0.5 sits ~1m back from the shelf
+# front (l1/l3 structure starts at y=1.523, measured from the corridor0
+# collision mesh), further than the aisle midline used to be, at the
+# user's request. Quaternion is _yaw_quat(90deg) in shelf_group.py's
+# convention -- G1 faces +X at yaw=0 (inferred from the old spawn's
+# yaw=180 facing -X, i.e. down the corridor toward the table at very
+# negative x), so yaw=90 should face +Y, toward l1/l3. Not verified on
+# real hardware yet -- confirm visually on the GPU machine; if backwards,
+# try yaw=-90 (quaternion [0.7071068, 0, 0, -0.7071068]) instead.
+_ROBOT_SPAWN_POSITION = [-1.996, 0.5, 0.0]
+_ROBOT_SPAWN_QUATERNION = [0.7071068, 0.0, 0.0, 0.7071068]  # yaw 90 deg, facing +Y toward l1/l3
+
+# r1/r2/r3 (the estantes that used to hold totes on the aisle's other side)
+# are no longer spawn targets -- replaced by plain gray box primitives of
+# the same footprint, purely so the corridor doesn't look like it has a
+# hole where a shelf used to be. Sizes/positions measured directly from the
+# corridor0 collision mesh (MJCF/collision/estante_r{1,2,3}_visual*.obj
+# bounding boxes), not guessed. Isaac rendering handled generically by
+# IsaacSimSimulator.__update_tables (any Box primitive actor, not just
+# "table"/"table2"); MuJoCo collision handled generically by
+# MujocoSimulator._build_primitive.
+_R_BAND_BOX_SPECS = {
+    "r1_box": {"position": [1.1325, -0.4695, 0.9955], "size": [2.017, 0.669, 2.017]},
+    "r2_box": {"position": [-0.9235, -0.469, 0.9995], "size": [2.017, 0.704, 2.017]},
+    "r3_box": {"position": [-2.991, -0.4695, 0.9955], "size": [2.018, 0.669, 2.017]},
+}
 
 # Max tilt (degrees) between a tote's local +Z axis and world +Z for it to
 # still count as "upright" -- i.e. resting on the same base face it uses on
@@ -72,9 +90,9 @@ _TARGET_TOTE_RGBA = [0.1, 0.3, 0.95, 1.0]  # blue
 
 # The target (blue) tote may only be picked among totes spawned on this tier
 # or lower -- tier letters encode height (A=lowest, increasing upward, see
-# SHELF_SPECS), so this exclude any tier above "D" (currently just "E" on
-# every shelf that has one). Non-target totes are unaffected and can still
-# spawn on any tier via the normal ShelfGroupDR occupancy.
+# SHELF_SPECS). l1/l3 now only have tier "D" (see dr/shelf_group.py), so
+# this is vestigial (every live tote already qualifies) but kept as "D"
+# rather than removed, in case a future layout reintroduces lower tiers.
 _MAX_TARGET_TIER_LETTER = "D"
 
 
@@ -83,8 +101,8 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
     uid: str = "g1_wholebody_locomotion_pick_totes_shelf_to_table_teleop"
     label: str = "G1 TELEOP Pick Totes Shelf to Table"
     description: str = (
-        "A task where the G1 robot must pick a tote from the estante_l1/estante_l3/estante_r1 shelves "
-        "and carry it to the table at the end of the aisle."
+        "A task where the G1 robot must pick a tote from the estante_l1/estante_l3 shelves "
+        "(tier D only) and carry it to the table at the end of the aisle."
     )
 
     metadata: dict[str, Any] = {
@@ -136,7 +154,7 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
         # _TARGET_TOTE_RGBA / _target_tote_key below).
         shelf_group=ShelfGroupDRCfg(
             asset_id="totes:bin_b04",
-            shelves=["l1", "l3", "r1"],
+            shelves=["l1", "l3"],
         ),
         # CameraDR.__call__ is a no-op passthrough (verified by reading) --
         # this key only exists to gate Task.reset()'s camera-registration
@@ -281,6 +299,20 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
             quaternion=table_quaternion,
         )
         self._layout.add_primitive("table", table_asset)
+
+        # Plain gray stand-ins for the r1/r2/r3 estantes, which no longer
+        # spawn totes (see shelf_group's shelves=["l1","l3"] above) -- same
+        # footprint as the real shelves so the corridor doesn't look like it
+        # has a hole where one used to be. Identity quaternion: box is
+        # axis-aligned already, matching the measured (world-frame) bboxes.
+        for box_name, box_spec in _R_BAND_BOX_SPECS.items():
+            box_asset = AssetManager.create(
+                "primitive:box",
+                size=list(box_spec["size"]),
+                position=list(box_spec["position"]),
+                quaternion=[1.0, 0.0, 0.0, 0.0],
+            )
+            self._layout.add_primitive(box_name, box_asset)
 
         # Pick one spawned tote as this episode's delivery target, swap it
         # from the distractor asset (bin_b04, what shelf_group actually

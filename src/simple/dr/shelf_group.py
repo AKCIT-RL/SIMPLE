@@ -49,7 +49,13 @@ SHELF_SPECS: Dict[str, ShelfSpec] = {
         x_max=-0.1768,
         y=1.6861,
         yaw_deg=180.0,
-        tiers={"B": 0.5238, "D": 1.0077, "E": 1.2824},
+        # Restricted to tier D only -- simplified single-tier corridor
+        # layout (l1/l3 only, r-band replaced by plain gray boxes, see
+        # g1_wholebody_locomotion_pick_totes_shelf_to_table_teleop.py).
+        # B/E calibration kept in a comment, not deleted, in case a future
+        # task wants the full multi-tier layout back:
+        #   tiers={"B": 0.5238, "D": 1.0077, "E": 1.2824}
+        tiers={"D": 1.0077},
     ),
     "l3": ShelfSpec(
         # l3 is a clone of l1's own geometry (Phase 2 "corridor completion
@@ -58,7 +64,7 @@ SHELF_SPECS: Dict[str, ShelfSpec] = {
         x_max=-1.9961,
         y=1.6861,
         yaw_deg=180.0,
-        tiers={"B": 0.5238, "D": 1.0077, "E": 1.2824},
+        tiers={"D": 1.0077},
     ),
     "r1": ShelfSpec(
         x_min=0.1237,

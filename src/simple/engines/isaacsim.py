@@ -442,8 +442,9 @@ class IsaacSimSimulator(Simulator):
         # Tasks that build their own fixed-geometry scenario (e.g. the tote
         # shelf-to-table corridor) never populate `layout.scene` on purpose
         # -- see the task's own dr_cfgs comment -- so there's no HSSD room to
-        # sync here. Still apply any `table`/`table2` primitives the task
-        # added directly, then bail before touching HSSD-only state.
+        # sync here. Still apply any Box primitives (table, table2, or any
+        # other, e.g. gray stand-in boxes) the task added directly, then
+        # bail before touching HSSD-only state.
         scene = getattr(self.task.layout, "scene", None)
         if scene is None:
             self.__update_tables()
@@ -542,13 +543,15 @@ class IsaacSimSimulator(Simulator):
         self.__update_tables()
 
     def __update_tables(self) -> None:
-        table_box = self.task.layout.actors.get("table")
-        if table_box is not None:
-            self._setup_table(f"{self.workspace_prim_path}/table_cuboid", table_box)
-
-        table2_box = self.task.layout.actors.get("table2")
-        if table2_box is not None:
-            self._setup_table(f"{self.workspace_prim_path}/table2_cuboid", table2_box)
+        # Generic over any Box primitive actor (table, table2, or any other
+        # name a task adds via layout.add_primitive, e.g. plain gray
+        # stand-in boxes) -- not just the two hardcoded table names, so a
+        # task can add as many box primitives as it needs without touching
+        # this engine.
+        from simple.assets.primitive import Box
+        for name, actor in self.task.layout.actors.items():
+            if isinstance(actor, Box):
+                self._setup_table(f"{self.workspace_prim_path}/{name}_cuboid", actor)
 
     def __update_cameras(self):
         for cname, cameraEntity in self.task.layout.cameras.items():
