@@ -23,4 +23,9 @@
 	url = git@github.com:songlin/XRoboToolkit-PC-Service-Pybind_X86_and_ARM64.git
 [submodule "third_party/decoupled_wbc"]
 	path = third_party/decoupled_wbc
-	url = git@github.com:songlin/decoupled_wbc.git
+	url = git@github.com:AKCIT-RL/decoupled_wbc.git
+	branch = integration/metaquest
+[submodule "third_party/televuer"]
+	path = third_party/televuer
+	url = git@github.com:AKCIT-RL/televuer.git
+	branch = integration/simple

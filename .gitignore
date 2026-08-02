@@ -53,6 +53,19 @@ data/*
 !data/_download.py
 !.env.sample
 
+# Industrial task furniture: the converted meshes ARE versioned (via LFS, see
+# .gitattributes) so users don't have to re-extract them just to run the task.
+# Only the runtime files — *_attach.xml + visual/collision OBJs, ~7 MB. The
+# downloaded source USDs stay out: they're only needed to regenerate, and Isaac
+# references the originals remotely when rendering.
+!data/assets/
+data/assets/*
+!data/assets/industrial/
+data/assets/industrial/*
+!data/assets/industrial/TableTrolley_B02_01/
+!data/assets/industrial/MobileShelvingCart_C05_01/
+data/assets/industrial/*/*.usd
+
 # Sphinx build artifacts
 docs/build/
 docs/source/api/

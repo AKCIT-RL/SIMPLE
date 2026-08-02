@@ -19,7 +19,8 @@ import simple.envs as _  # import all envs
 if TYPE_CHECKING:
     from simple.envs.sonic_loco_manip import SonicLocoManipEnv
 
-from simple.agents.pico_decoupled_agent import PicoDecoupledAgent
+# from simple.agents.pico_decoupled_agent import PicoDecoupledAgent  # PICO (XRoboToolkit)
+from simple.agents.vuer_decoupled_agent import VuerDecoupledAgent
 from gear_sonic.utils.mujoco_sim.configs import SimLoopConfig
 from simple.robots.g1_sonic import G1Sonic
 
@@ -180,7 +181,8 @@ def main(
     num_episodes: Annotated[int, typer.Option()] = 100,
     shard_size: Annotated[int, typer.Option()] = 100,
     dr_level: Annotated[int, typer.Option()] = 0,
-    record: Annotated[bool, typer.Option()] = False
+    record: Annotated[bool, typer.Option()] = False,
+    industrial_material: Annotated[bool, typer.Option()] = False,
 ):
     assert sim_mode in ["mujoco"], f"Invalid sim_mode {sim_mode} for teleop."
     sim_cnt = 0
@@ -196,7 +198,8 @@ def main(
         headless=headless,
         max_episode_steps=max_episode_steps,
         sonic_config=sonic_config,
-        target=target
+        target=target,
+        industrial_material=industrial_material,
     )
     sonic_env: SonicLocoManipEnv = env.unwrapped  # type: ignore
     task = sonic_env.task
@@ -204,7 +207,7 @@ def main(
     assert sonic_env.spec is not None
     assert isinstance(robot, G1Sonic)
 
-    agent = PicoDecoupledAgent(robot)
+    agent = VuerDecoupledAgent(robot)
     agent.num_episodes = num_episodes
 
     # --- Recording setup ---
@@ -216,10 +219,8 @@ def main(
     control_dt = control_decimal * robot.sim_dt  # = 0.02 s (50 Hz)
 
     def _on_episode_reset():
-        """In recording mode, reset the WBC pipeline to a consistent initial pose,
-        skip elastic band drop, and engage the RL policy immediately."""
-        if not record:
-            return
+        """Reset the WBC pipeline to a consistent initial pose,
+        skip elastic band drop, and engage the RL policy immediately for all modes."""
         if robot.elastic_band is not None:
             robot.elastic_band.enable = False
         agent._dropping = False
@@ -239,6 +240,19 @@ def main(
         print("=" * 60)
         print("[Record] Episode reset: elastic band skipped, policy reset to initial pose")
         print("[Record] Upper body tracking PAUSED — align arms then press activation button") """
+
+        # Per-episode goal HUD streamed to the headset. Only tasks that expose
+        # `required_counts` (quantities that vary per episode) show anything;
+        # every other task keeps the plain view.
+        counts = getattr(task, "required_counts", None)
+        agent.hud_lines = (
+            [
+                f"{counts['drivers']} Chaves",
+                f"{counts['screws']} Parafusos",
+            ]
+            if counts
+            else []
+        )
 
     # stabilized_printed = False
     step_pbar = None  # Progress bar for current recording episode
@@ -357,6 +371,15 @@ def main(
 
                     if rec_state == RecordingState.RECORDING:
                         frame = _build_frame(agent, obj_names, **data_frame)
+                        # Keep the recorded prompt in sync with the CURRENT episode.
+                        # Tasks whose instruction varies per episode (e.g. the
+                        # industrial sorting task's quantity DR) would otherwise be
+                        # saved under the prompt baked in at exporter init.
+                        # NOTE: set the exporter's fallback instead of putting
+                        # "task" in the frame — add_frame runs lerobot's
+                        # validate_frame first, which rejects any key that isn't a
+                        # declared feature ("Extra features: {'task'}").
+                        exporter.task = task.instruction
                         exporter.add_frame(frame)
                         if step_pbar is not None:
                             step_pbar.update(1)
@@ -445,3 +468,6 @@ def typer_main():
 
 if __name__ == "__main__":
     typer.run(main)
+
+
+# python src/simple/cli/teleop_decoupled_wbc.py simple/G1WholebodyLocomotionPickBetweenTablesTeleop-v0 --target=graspnet1b:0 --sim-mode=mujoco --record --no-headless
