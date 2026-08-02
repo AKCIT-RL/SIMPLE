@@ -75,6 +75,46 @@ def _yaw_quat(yaw_deg: float) -> List[float]:
     return [math.cos(half), 0.0, 0.0, math.sin(half)]
 
 
+# Per-asset correction applied on top of SHELF_SPECS.tiers -- those Z values
+# are calibrated for "toteweg" specifically (board top + toteweg's resting
+# offset, see migration plan doc Phase 4). Other tote-family assets have a
+# different footprint/resting offset and need a delta on top of that same
+# baseline rather than their own separate SHELF_SPECS table. Measured
+# directly from each asset's MuJoCo collision meshes (MJCF/collision/*.obj),
+# not estimated:
+#   toteweg footprint 0.197 x 0.327 x 0.146m, resting offset (-z_min) 0.0718m
+#   bin_b04 footprint 0.359 x 0.209 x 0.150m, resting offset (-z_min) 0.0045m
+# bin_b04's narrow axis (0.209m, close to toteweg's 0.197m tote_width) is on
+# local Y, not X like toteweg -- a +90 deg yaw aligns it with the shelf's
+# bin-spacing (X) axis the same way toteweg's local X already is.
+# (z_offset_delta_m, yaw_offset_deg) relative to the toteweg baseline.
+TOTE_ASSET_POSE_DELTA: Dict[str, Tuple[float, float]] = {
+    "toteweg": (0.0, 0.0),
+    "bin_b04": (0.0045 - 0.0718, 90.0),
+}
+
+
+def retarget_tote_pose(pose: "Pose", from_name: str, to_name: str) -> "Pose":
+    """Convert a tote's pose from one tote-family asset's calibrated resting
+    pose to another's, undoing `from_name`'s TOTE_ASSET_POSE_DELTA and
+    applying `to_name`'s -- e.g. converting a spawned bin_b04 slot into the
+    correct toteweg resting pose at that same shelf slot."""
+    from_z, from_yaw = TOTE_ASSET_POSE_DELTA[from_name]
+    to_z, to_yaw = TOTE_ASSET_POSE_DELTA[to_name]
+
+    position = list(pose.position)
+    position[2] += to_z - from_z
+
+    # Undo from_name's yaw delta, then apply to_name's, via the quaternion's
+    # own current yaw (avoids needing the shelf's base yaw at the call site).
+    x, y, z, w = pose.quaternion[1], pose.quaternion[2], pose.quaternion[3], pose.quaternion[0]
+    current_yaw_deg = math.degrees(math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)))
+    base_yaw_deg = current_yaw_deg - from_yaw
+    quaternion = _yaw_quat(base_yaw_deg + to_yaw)
+
+    return Pose(position=position, quaternion=quaternion)
+
+
 def _tier_bin_ranges(
     shelf: ShelfSpec, max_per_tier: int, tote_width: float, post_margin: float, min_gap: float
 ) -> List[Tuple[float, float]]:
@@ -129,7 +169,8 @@ class ShelfGroupDR(Randomizer):
             shelf, self.cfg.max_per_tier, self.cfg.tote_width, self.cfg.post_margin, self.cfg.min_gap
         )
         occupancy = self._sample_shelf_occupancy(shelf)
-        quat = _yaw_quat(shelf.yaw_deg)
+        z_delta, yaw_delta = TOTE_ASSET_POSE_DELTA.get(self.obj_id, (0.0, 0.0))
+        quat = _yaw_quat(shelf.yaw_deg + yaw_delta)
 
         placements: List[Tuple[str, str, Pose]] = []
         for tier_name, count in occupancy.items():
@@ -139,7 +180,7 @@ class ShelfGroupDR(Randomizer):
             for bin_idx in bin_indices:
                 lo, hi = bin_ranges[bin_idx]
                 x = random.uniform(lo, hi)
-                z = shelf.tiers[tier_name]
+                z = shelf.tiers[tier_name] + z_delta
                 pose = Pose(position=[x, shelf.y, z], quaternion=quat)
                 placements.append((shelf_name, tier_name, pose))
         return placements
@@ -192,7 +233,13 @@ class ShelfGroupDRCfg(RandomizerCfg):
     shelves: List[str] = field(default_factory=lambda: ["l1", "l3", "r1"])
     max_per_tier: int = 3
     min_per_shelf: int = 2
-    tote_width: float = 0.197  # toteweg lateral footprint, from Phase 1 calibration
+    # Lateral footprint of whichever asset ShelfGroupDR actually spawns for
+    # bin-packing purposes (see _tier_bin_ranges) -- 0.21m default assumes
+    # bin_b04 (its narrow axis is 0.209m once TOTE_ASSET_POSE_DELTA's +90deg
+    # yaw aligns it with the shelf's bin-spacing axis); was 0.197m
+    # (toteweg's own narrow axis) before bin_b04 became the default spawn
+    # asset -- see g1_wholebody_locomotion_pick_totes_shelf_to_table_teleop.py.
+    tote_width: float = 0.21
     post_margin: float = 0.15  # clearance from shelf frame legs at each tier's ends (placeholder)
     min_gap: float = 0.03  # minimum clearance between neighboring totes in the same tier
     randmizer_class: Type[Randomizer] = ShelfGroupDR

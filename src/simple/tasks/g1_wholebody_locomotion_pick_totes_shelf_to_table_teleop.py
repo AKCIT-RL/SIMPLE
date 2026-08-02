@@ -8,6 +8,7 @@ Licensed under the terms in LICENSE file.
 from __future__ import annotations
 
 import random
+from collections import Counter
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 if TYPE_CHECKING:
@@ -25,7 +26,7 @@ from simple.core.task import Task
 from simple.core.types import Pose
 from simple.dr import *
 from simple.dr.manager import TabletopGraspDRManager
-from simple.dr.shelf_group import SHELF_SPECS
+from simple.dr.shelf_group import SHELF_SPECS, TOTE_ASSET_POSE_DELTA, retarget_tote_pose
 from simple.dr.types import Box
 from simple.robots.protocols import Controllable
 from simple.robots.registry import RobotRegistry
@@ -130,8 +131,11 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
                 "pick up the blue tote from the shelf and bring it to the table.",
             ]
         ),
+        # Spawns bin_b04 (distractor asset) at every slot -- reset() swaps
+        # exactly one live instance to toteweg (the delivery target, see
+        # _TARGET_TOTE_RGBA / _target_tote_key below).
         shelf_group=ShelfGroupDRCfg(
-            asset_id="totes:toteweg",
+            asset_id="totes:bin_b04",
             shelves=["l1", "l3", "r1"],
         ),
         # CameraDR.__call__ is a no-op passthrough (verified by reading) --
@@ -231,13 +235,18 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
 
     def _tote_tier_letter(self, key: str) -> str | None:
         """Best-effort tier-letter lookup for a live tote, matched by its
-        spawn-time Z against SHELF_SPECS tier heights -- exact float match,
-        since this must be called right after reset(), before any physics
-        step can perturb the pose ShelfGroupDR assigned."""
-        z = self.layout.actors[key].pose.position[2]
+        spawn-time Z against SHELF_SPECS tier heights (offset by the live
+        tote's own asset delta, see TOTE_ASSET_POSE_DELTA -- ShelfGroupDR
+        spawns bin_b04 by default, whose Z sits below the raw toteweg-
+        calibrated SHELF_SPECS value) -- exact float match, since this must
+        be called right after reset(), before any physics step can perturb
+        the pose ShelfGroupDR assigned."""
+        actor = self.layout.actors[key]
+        z = actor.pose.position[2]
+        z_delta, _yaw_delta = TOTE_ASSET_POSE_DELTA.get(actor.asset.label, (0.0, 0.0))
         for shelf in SHELF_SPECS.values():
             for tier_letter, tier_z in shelf.tiers.items():
-                if abs(tier_z - z) < 1e-6:
+                if abs(tier_z + z_delta - z) < 1e-6:
                     return tier_letter
         return None
 
@@ -273,20 +282,25 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
         )
         self._layout.add_primitive("table", table_asset)
 
-        # Pick one spawned tote as this episode's delivery target and mark
-        # it visually (see _TARGET_TOTE_RGBA) -- min_per_shelf=2 per shelf x
-        # 3 shelves guarantees at least one live tote every reset. Restricted
-        # to tier <= _MAX_TARGET_TIER_LETTER (see constant) so the target
-        # never lands on the topmost, hardest-to-reach tier; fall back to
-        # any live tote in the rare case none qualify (e.g. every shelf's
-        # stochastic occupancy happened to land only on excluded tiers).
+        # Pick one spawned tote as this episode's delivery target, swap it
+        # from the distractor asset (bin_b04, what shelf_group actually
+        # spawns) to toteweg, and mark it visually (see _TARGET_TOTE_RGBA).
+        # min_per_shelf=2 per shelf x 3 shelves guarantees at least one live
+        # tote every reset. Restricted to tier <= _MAX_TARGET_TIER_LETTER
+        # (see constant) so the target never lands on the topmost,
+        # hardest-to-reach tier; fall back to any live tote in the rare case
+        # none qualify (e.g. every shelf's stochastic occupancy happened to
+        # land only on excluded tiers).
         target_candidates = [
             k for k in self._live_target_keys()
             if (letter := self._tote_tier_letter(k)) is not None
             and letter <= _MAX_TARGET_TIER_LETTER
         ] or self._live_target_keys()
         self._target_tote_key = random.choice(target_candidates)
-        self._layout.actors[self._target_tote_key].rgba = list(_TARGET_TOTE_RGBA)
+        target_actor = self._layout.actors[self._target_tote_key]
+        target_actor.pose = retarget_tote_pose(target_actor.pose, from_name="bin_b04", to_name="toteweg")
+        target_actor.asset = AssetManager.get("totes").load("toteweg")
+        target_actor.rgba = list(_TARGET_TOTE_RGBA)
 
         lang_dr = self.dr.get_randomizer("language")
         assert lang_dr is not None
@@ -320,6 +334,22 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
         cos_tilt = np.dot(local_z_in_world, _WORLD_UP)
         return cos_tilt >= np.cos(np.deg2rad(_STABLE_TILT_TOLERANCE_DEG))
 
+    def _tote_body_names(self, keys: list[str]) -> Dict[str, str]:
+        """MuJoCo body name for each given live tote key, mirroring
+        MujocoSimulator._setup_scene's duplicate-label disambiguation
+        (engines/mujoco.py:144-160): bare asset label if it's the only live
+        tote with that label (true for the single toteweg target every
+        episode), else f"{label}_{key}" (true for the bin_b04 distractors).
+        Counts across *every* live tote, not just `keys`, since that's what
+        the engine actually dedups against when it builds the scene."""
+        all_keys = self._live_target_keys()
+        labels = {k: self.layout.actors[k].asset.label for k in all_keys}
+        label_counts = Counter(labels.values())
+        return {
+            k: labels[k] if label_counts[labels[k]] == 1 else f"{labels[k]}_{k}"
+            for k in keys
+        }
+
     def check_target_tote_on_table(self, *args, **kwargs) -> bool:
         """True if the episode's designated target tote (the blue one, see
         `_target_tote_key`) is resting stably on the table -- in contact
@@ -343,10 +373,7 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
         if not live_keys or mujoco_env is None:
             return counts
 
-        # Body names follow MujocoSimulator's duplicate-label disambiguation
-        # (src/simple/engines/mujoco.py): every spawned tote shares asset
-        # label "toteweg", so each actual body is "toteweg_{layout_key}".
-        body_name_by_key = {key: f"toteweg_{key}" for key in live_keys}
+        body_name_by_key = self._tote_body_names(live_keys)
         live_body_names = set(body_name_by_key.values())
 
         mj_physics_data = mujoco_env.mjData
@@ -401,7 +428,7 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
         if mujoco_env is None or self._target_tote_key is None:
             return False
 
-        live_body_names = {f"toteweg_{self._target_tote_key}"}
+        live_body_names = set(self._tote_body_names([self._target_tote_key]).values())
 
         mj_physics_data = mujoco_env.mjData
         mj_physics_model = mujoco_env.mjModel
