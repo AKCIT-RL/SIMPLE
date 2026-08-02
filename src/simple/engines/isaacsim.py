@@ -214,6 +214,32 @@ class IsaacSimSimulator(Simulator):
     BACKGROUND_ORIENTATION_WXYZ = (1.0, 0.0, 0.0, 0.0)
     BACKGROUND_SCALE = (1.0, 1.0, 1.0)
 
+    # Base color for assets confirmed to carry zero material/texture data in
+    # their own USD (see __create_object) -- starting points, not calibrated
+    # against a real render (this file can't be tested locally), tune by
+    # inspecting the first rendered frame on a GPU machine.
+    _DEFAULT_MATERIAL_COLORS = {
+        "corridor0": (0.55, 0.55, 0.58),  # gray metal shelf
+        "toteweg": (0.45, 0.5, 0.42),  # neutral industrial tote (non-target)
+    }
+
+    # Isaac-only visual position correction, added on top of obj_info.pose in
+    # __update_object -- never touches the actual Pose object shared with
+    # MuJoCo (that pose is what both physics AND the SHELF_SPECS tote
+    # placements are calibrated against; shifting it would misalign the
+    # totes from the real shelf collision just to fix a rendering quirk).
+    # corridor0's raw display USD (referenced directly by Isaac) has a
+    # different origin than the MJCF-derived collision mesh MuJoCo/physics
+    # use -- confirmed by comparing AABBs directly: X centers differ by
+    # ~0.185m, Y centers by ~0.219m (Z matches within ~1.7cm, no correction
+    # needed there). Y width also differs (~0.30m narrower in the raw USD),
+    # a residual mismatch a pure translation can't fully fix -- not
+    # calibrated against a real render, tune by inspecting the first
+    # rendered frame on a GPU machine.
+    _VISUAL_POSITION_CORRECTIONS = {
+        "corridor0": (-0.185, -0.219, 0.0),
+    }
+
     def __init__(self, task:Task, render_hz: int=30, headless: bool=False) -> None:
         self._config_isaac()
         # self.render_hz = render_hz # @deprecated
@@ -283,23 +309,40 @@ class IsaacSimSimulator(Simulator):
         # 5. add objects
         self.__reset_objects()
         self.current_visible_objects = []
+        # Duplicate-label disambiguation, mirroring MujocoSimulator._setup_scene
+        # (self._dup_object_labels there): __create_object/__update_object used
+        # to key self.objects purely by asset.label, so every actor sharing the
+        # same asset (e.g. several "bin_b04" totes from shelf_group) collapsed
+        # onto a single Isaac prim -- each iteration below overwrote the same
+        # prim's pose, so only the last one processed ever ended up visible.
+        # Confirmed by real render: only one bin_b04 + the (always-unique)
+        # target toteweg were ever visible, never the other ~15 distractors.
+        from collections import Counter
+        label_counts = Counter()
+        for _obj_info in self.task.layout.actors.values():
+            if isinstance(_obj_info, (ObjectActor, StaticObjectActor)):
+                label_counts[_obj_info.asset.label] += 1
+        dup_labels = {lbl for lbl, count in label_counts.items() if count > 1}
+
         # object_shader_params = copy.deepcopy(self.task.layout.material_info["object_shader_params"])
         for obj_name, obj_info in self.task.layout.actors.items():
             if not isinstance(obj_info, (ObjectActor, StaticObjectActor, ArticulatedObjectActor)):
                 continue
-            
+
             if isinstance(obj_info, ArticulatedObjectActor):
                 self.add_articulated_object(obj_name, obj_info)
-                
-            else:
-                if obj_info.asset.label not in self.objects:
-                    self.__create_object(obj_name, obj_info)
 
-                self.__update_object(obj_name, obj_info)
+            else:
+                label = obj_info.asset.label
+                object_key = f"{label}_{obj_name}" if label in dup_labels else label
+                if object_key not in self.objects:
+                    self.__create_object(object_key, obj_info)
+
+                self.__update_object(object_key, obj_info)
                 """ if obj_info["bTarget"]:
                     self.target_obj_id = obj_info["id"]
                     self.target_obj = self.objects[obj_name] """
-                self.current_visible_objects.append(self.objects[obj_info.asset.label]) # obj_name
+                self.current_visible_objects.append(self.objects[object_key])
 
         self.step_id = 0
         """ since isaac is already reset, we reset init robot qpos here 
@@ -314,6 +357,27 @@ class IsaacSimSimulator(Simulator):
                 joint_indices.append(self.robot.get_dof_index(isaac_jname))
                 qpos.append(jpos)
             self.robot.set_joint_positions(qpos, joint_indices=np.arange(len(joint_state)))
+
+        self.__warm_up_instanced_prims()
+
+    def __warm_up_instanced_prims(self) -> None:
+        """A few extra render passes right after objects are (re)populated.
+
+        Objects referenced through an `instanceable=true` prim (e.g. the
+        SimReady bin_b04 tote -- geometry lives in a separate prototype, not
+        under the instance's own prim path) aren't necessarily populated by
+        Hydra in time for the very first captured frame; the render log
+        shows `... has not been populated` for exactly this case, and the
+        object is invisible in the output. A prior version of this file had
+        an identical warm-up (see the commented-out block in
+        __update_object, tagged "BUG: extra render to avoid empty frame")
+        but scoped per-object per-frame; doing it once here, right after
+        update_layout() finishes (re)building the object set, is enough and
+        far cheaper.
+        """
+        for _ in range(3):
+            self.world.step(render=False)
+            rep.orchestrator.step(rt_subframes=1, pause_timeline=False)
 
     def _setup_scene(self, move_surface_to_origin=True):
         assert not self.is_scene_create
@@ -542,7 +606,12 @@ class IsaacSimSimulator(Simulator):
 
     def __create_object(self, obj_key: str, object_info: ObjectActor):
         obj_id = object_info.uid # object_info["id"]
-        object_prim_path = f'{self.workspace_prim_path}/{object_info.asset.label}' # {object_info["name"]}
+        # obj_key is the disambiguated key computed in update_layout (bare
+        # asset label, unless several actors share it -- see dup_labels
+        # there); using it here instead of the bare label is what gives each
+        # instance of a repeated asset (e.g. multiple "bin_b04" totes) its
+        # own Isaac prim instead of all of them collapsing onto one.
+        object_prim_path = f'{self.workspace_prim_path}/{obj_key}'
 
         # if obj_id == 100:
         #     cube = self.__create_cuboid(object_prim_path, 
@@ -588,7 +657,20 @@ class IsaacSimSimulator(Simulator):
             sem.CreateSemanticDataAttr()
             sem.GetSemanticTypeAttr().Set(semantic_type)
             sem.GetSemanticDataAttr().Set(semantic_value)
-    
+
+        # corridor0/toteweg carry zero material/texture data in their source
+        # USD (confirmed by inspecting the raw files directly -- no Looks,
+        # Shader, .mdl, or displayColor anywhere), so Kit falls back to an
+        # arbitrary flat preview color. Give them a plausible base color
+        # instead. Only for assets confirmed to have no material of their
+        # own -- doesn't touch bin_b04 (has real Looks/MDL/textures) or any
+        # future asset that already carries material.
+        default_color = self._DEFAULT_MATERIAL_COLORS.get(object_info.asset.label)
+        if default_color is not None and not isaacsim_prims.find_matching_prim_paths(
+            f'{object_prim_path}/Looks/material_*'
+        ):
+            self._bind_solid_color(stage, object_prim_path, f"{object_prim_path}/Looks/DefaultMaterial", default_color)
+
         obj = {
             "id": obj_id,
             "object_prim_path": object_prim_path,
@@ -596,12 +678,47 @@ class IsaacSimSimulator(Simulator):
             "bTarget": obj_key == "target" #object_info["bTarget"],
         }
 
-        self.objects[object_info.asset.label] = obj
+        self.objects[obj_key] = obj
 
-    def __update_object(self, obj_name, obj_info: ObjectActor):
-        obj = self.objects[obj_info.asset.label] # obj_info["name"]
+    def _bind_solid_color(self, stage, target_prim_path: str, material_prim_path: str, rgb) -> None:
+        """Binds a flat-color UsdPreviewSurface material to `target_prim_path`
+        (and, via USD's inherited material-binding resolution, its whole
+        descendant geometry -- no need to know the exact mesh sub-prim name).
+        Plain UsdShade/UsdPreviewSurface instead of an MDL asset (e.g.
+        OmniPBR) since it needs no external .mdl file and its shader input
+        names are stable core-USD, not Kit-version-dependent."""
+        material = UsdShade.Material.Define(stage, material_prim_path)
+        shader = UsdShade.Shader.Define(stage, f"{material_prim_path}/Shader")
+        shader.CreateIdAttr("UsdPreviewSurface")
+        shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(
+            Gf.Vec3f(*[float(c) for c in rgb])
+        )
+        shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.6)
+        shader.CreateOutput("surface", Sdf.ValueTypeNames.Token)
+        material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
+        target_prim = stage.GetPrimAtPath(target_prim_path)
+        UsdShade.MaterialBindingAPI.Apply(target_prim).Bind(material)
+
+    def __update_object(self, obj_key, obj_info: ObjectActor):
+        obj = self.objects[obj_key]
         # obj_geom = GeometryPrim(prim_path=obj["object_prim_path"])
         # obj_geom.set_visibility(True)
+
+        # Target-tote highlight (blue), ported from MuJoCo -- ObjectActor.rgba
+        # is set by the task only for the one tote the robot must deliver
+        # this episode (see _TARGET_TOTE_RGBA), but until now was read only
+        # by MujocoSimulator._build_object; Isaac never applied it, so there
+        # was no way to tell which tote is the target from an Isaac render.
+        # Overrides whatever base color __create_object bound (or the
+        # asset's own material, for bin_b04-like assets).
+        rgba = getattr(obj_info, "rgba", None)
+        if rgba is not None:
+            stage = omni.usd.get_context().get_stage()
+            self._bind_solid_color(
+                stage, obj["object_prim_path"],
+                f'{obj["object_prim_path"]}/Looks/TargetHighlightMaterial',
+                rgba[:3],
+            )
 
         # # enable physics for now
         # geom_prim_path = f'{obj["object_prim_path"]}/Meshes'
@@ -621,7 +738,11 @@ class IsaacSimSimulator(Simulator):
 
         # change object pose
         obj_xform = XFormPrim(prim_path=obj["object_prim_path"])
-        obj_xform.set_local_pose(obj_info.pose.position, obj_info.pose.quaternion)
+        position = obj_info.pose.position
+        correction = self._VISUAL_POSITION_CORRECTIONS.get(obj_info.asset.label)
+        if correction is not None:
+            position = [p + c for p, c in zip(position, correction)]
+        obj_xform.set_local_pose(position, obj_info.pose.quaternion)
         obj_xform.set_visibility(True)
         # geom_prim_path = f'{obj["object_prim_path"]}/Meshes'
         # obj_geom = GeometryPrim(prim_path=geom_prim_path)

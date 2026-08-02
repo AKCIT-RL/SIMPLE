@@ -247,7 +247,15 @@ class MujocoSimulator(Simulator):
                 else:
                     mj_obj.xfrc_applied = pseudo_gravity
                 mj_objects[objtype] = mj_obj
-                obj_names.append(label)
+                # Disambiguated body_name, not the bare label -- consumed by
+                # IsaacSimSimulator.sync_states, which zips this against
+                # obj_positions/obj_orientations and does
+                # self.objects[obj_name] to pick which Isaac prim to move.
+                # With several same-asset instances (e.g. multiple bin_b04
+                # totes), the bare label collides across all of them; Isaac's
+                # object keys are now disambiguated the same way (see
+                # update_layout's dup_labels), so this must match.
+                obj_names.append(body_name)
 
         self.mj_objects = mj_objects
         self.obj_names = obj_names
