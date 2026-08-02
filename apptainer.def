@@ -1,0 +1,220 @@
+# Apptainer definition file for SIMPLE
+# Mirrors the multi-stage Dockerfile:
+#   • nvidia/cuda:12.8.0-devel-ubuntu22.04  → CUDA devel toolkit (nvcc + headers)
+#   • nvcr.io/nvidia/isaac-sim:4.5.0        → base runtime
+#
+# Requirements
+# ────────────
+#   Apptainer ≥ 1.1  (for %arguments / {{ }} substitution)
+#   NGC credentials for nvcr.io:
+#     export APPTAINER_DOCKER_USERNAME=\$oauthtoken
+#     export APPTAINER_DOCKER_PASSWORD=<YOUR_NGC_API_KEY>
+#
+# Build
+# ─────
+#   apptainer build --nv simple.sif apptainer.def
+#
+#   Override build arguments:
+#     apptainer build --nv \
+#       --build-arg TORCH_CUDA_ARCH_LIST=8.9+PTX \
+#       --build-arg SIMPLE_FULL_INSTALL=1 \
+#       simple.sif apptainer.def
+#
+# Run
+# ───
+#   # Interactive shell
+#   apptainer run --nv simple.sif
+#
+#   # Execute a specific command
+#   apptainer exec --nv simple.sif uv run eval --headless
+#
+#   # Bind-mount a data directory and a persistent uv cache
+#   apptainer run --nv \
+#     --bind /path/to/data:/workspace/SIMPLE/data \
+#     --bind $PWD/.uv-cache:/workspace/.uv-cache \
+#     simple.sif
+
+Bootstrap: docker
+From: nvcr.io/nvidia/isaac-sim:{{ ISAAC_SIM_VERSION }}
+
+%arguments
+    ISAAC_SIM_VERSION=4.5.0
+    CUDA_VERSION=12.8
+    CUDA_PKG_VERSION=12-8
+    TORCH_CUDA_ARCH_LIST=8.0+PTX
+    TIMEZONE=UTC
+    # 0 = minimal (headless sim / eval / replay / datagen)
+    # 1 = full    (decoupled_wbc[full]: ROS bridge, PyQt6, pyrealsense2, Ray, mujoco, rerun)
+    SIMPLE_FULL_INSTALL=0
+
+# ── Copy source files from the build context (repo root) ──────────────────────
+# Mirrors the Dockerfile COPY instructions.
+# Run `apptainer build` from the repository root directory so that these
+# relative paths resolve correctly.
+%files
+    pyproject.toml                        /workspace/SIMPLE/pyproject.toml
+    uv.lock                               /workspace/SIMPLE/uv.lock
+    third_party                           /workspace/SIMPLE/third_party
+    scripts/install_curobo_docker.sh      /workspace/SIMPLE/scripts/install_curobo_docker.sh
+    src                                   /workspace/SIMPLE/src
+
+%post
+    set -euo pipefail
+
+    # ── Build-arg values injected by Apptainer %arguments substitution ─────
+    export CUDA_VERSION="{{ CUDA_VERSION }}"
+    export CUDA_PKG_VERSION="{{ CUDA_PKG_VERSION }}"
+    export TORCH_CUDA_ARCH_LIST="{{ TORCH_CUDA_ARCH_LIST }}"
+    export SIMPLE_FULL_INSTALL="{{ SIMPLE_FULL_INSTALL }}"
+    export TZ="{{ TIMEZONE }}"
+    export DEBIAN_FRONTEND=noninteractive
+
+    # ── CUDA devel toolkit ──────────────────────────────────────────────────
+    # Mirrors: COPY --from=cuda /usr/local/cuda-12.8 /usr/local/cuda-12.8
+    # Installs nvcc, CUDA headers, and libraries needed to compile cuRobo.
+    if [ ! -d "/usr/local/cuda-${CUDA_VERSION}" ]; then
+        apt-get update -qq
+        apt-get install -y --no-install-recommends wget ca-certificates gnupg
+        wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+        dpkg -i cuda-keyring_1.1-1_all.deb
+        rm -f cuda-keyring_1.1-1_all.deb
+        apt-get update -qq
+        apt-get install -y --no-install-recommends cuda-toolkit-${CUDA_PKG_VERSION}
+        apt-get clean
+        rm -rf /var/lib/apt/lists/*
+    fi
+    export CUDA_HOME=/usr/local/cuda-${CUDA_VERSION}
+
+    # ── System packages + libstdc++6 fix ───────────────────────────────────
+    apt-get update && apt-get install -y --no-install-recommends \
+        gnupg dirmngr lsb-release \
+        git curl wget vim ca-certificates build-essential ninja-build cmake \
+        libgmp-dev libgmp10 ffmpeg \
+        python3 python3-pip python3-dev pybind11-dev software-properties-common
+
+    curl -fsSL 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x60C317803A41BA51845E371A1E9377A2BA9EF27F' \
+       | gpg --dearmor -o /etc/apt/trusted.gpg.d/ubuntu-toolchain-r.gpg
+
+    echo "deb http://ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu $(lsb_release -cs) main" \
+        > /etc/apt/sources.list.d/ubuntu-toolchain-r-test.list
+
+    apt-get update
+    apt-get install -y --no-install-recommends libstdc++6
+    apt-get clean
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+    # ── Install uv ─────────────────────────────────────────────────────────
+    cd /root
+    wget -q https://astral.sh/uv/install.sh
+    bash install.sh
+    rm -f install.sh
+    rm -rf /tmp/* /var/tmp/*
+    export PATH=/root/.local/bin:$PATH
+
+    # ── Configure uv + workspace ────────────────────────────────────────────
+    export UV_CACHE_DIR=/workspace/.uv-cache
+    export UV_HTTP_TIMEOUT=1800
+    export UV_HTTP_RETRIES=10
+    export SETUPTOOLS_SCM_PRETEND_VERSION=0.7.7
+    export OMNI_KIT_ACCEPT_EULA=Y
+    export GIT_LFS_SKIP_SMUDGE=1
+
+    mkdir -p /workspace/.uv-cache
+    chmod 777 /workspace/.uv-cache
+
+    # ── Install Python dependencies ─────────────────────────────────────────
+    cd /workspace/SIMPLE
+    uv venv .venv
+    uv pip install setuptools
+    uv sync --group lerobot --index-strategy unsafe-best-match
+    rm -rf /tmp/* /var/tmp/*
+
+    # ── Install cuRobo ──────────────────────────────────────────────────────
+    # Skip host NVIDIA runtime assertion and GPU-dependent verification
+    # (build environment has no GPU attached, same as `docker build`).
+    export SIMPLE_SKIP_NVIDIA_RUNTIME_CHECK=1
+    export SIMPLE_SKIP_CUROBO_VERIFY=1
+    ./scripts/install_curobo_docker.sh
+    rm -rf /tmp/* /var/tmp/*
+
+    # ── Install SIMPLE project in editable mode ─────────────────────────────
+    uv pip install --editable .
+    rm -rf /tmp/* /var/tmp/*
+    chmod -R 755 /workspace/SIMPLE
+
+    # ── Vulkan loader ───────────────────────────────────────────────────────
+    # Required by omni.kit's carb.graphics-vulkan at runtime.
+    apt-get update
+    apt-get install -y --no-install-recommends libvulkan1
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+
+    # ── Sonic / decoupled-WBC stack ────────────────────────────────────────
+    if [ "${SIMPLE_FULL_INSTALL}" = "1" ]; then
+        echo "[sonic-install] SIMPLE_FULL_INSTALL=1 — installing full sonic group"
+        GIT_LFS_SKIP_SMUDGE=1 uv sync --group sonic --index-strategy unsafe-best-match
+    else
+        echo "[sonic-install] SIMPLE_FULL_INSTALL=0 — installing minimal sonic subset"
+        uv pip install --python /workspace/SIMPLE/.venv/bin/python \
+            --no-build-isolation \
+            -e third_party/gear_sonic \
+            -e third_party/decoupled_wbc \
+            -e third_party/unitree_sdk2_python \
+            -e third_party/televuer \
+            tyro pin pin-pink pyyaml onnxruntime loguru termcolor \
+            "qpsolvers[open_source_solvers]"
+    fi
+    rm -rf /tmp/* /var/tmp/*
+
+%environment
+    export CUDA_HOME=/usr/local/cuda-{{ CUDA_VERSION }}
+    export PATH=/root/.local/bin:$PATH
+    export UV_CACHE_DIR=/workspace/.uv-cache
+    export OMNI_KIT_ACCEPT_EULA=Y
+    export TORCH_CUDA_ARCH_LIST="{{ TORCH_CUDA_ARCH_LIST }}"
+    export SETUPTOOLS_SCM_PRETEND_VERSION=0.7.7
+
+%runscript
+    # Mirrors Dockerfile: ENTRYPOINT ["/usr/bin/env"] CMD ["/bin/bash"]
+    exec /usr/bin/env "${@:-/bin/bash}"
+
+%labels
+    Maintainer Songlin Wei
+    BaseImage nvcr.io/nvidia/isaac-sim:4.5.0
+    CUDAVersion 12.8
+    Description SIMPLE: SIMulation-based Policy Learning & Evaluation
+
+%help
+    SIMPLE Apptainer container — mirrors the Dockerfile in this repository.
+
+    Requirements:
+      - Apptainer >= 1.1 (for %arguments / {{ }} substitution)
+      - NVIDIA NGC credentials for nvcr.io (Isaac Sim base image):
+          export APPTAINER_DOCKER_USERNAME=\$oauthtoken
+          export APPTAINER_DOCKER_PASSWORD=<YOUR_NGC_API_KEY>
+      - Run from the repository root directory (so %files paths resolve)
+
+    Build (minimal, default):
+      apptainer build --nv simple.sif apptainer.def
+
+    Build (full install — real-robot / GUI teleop):
+      apptainer build --nv \
+        --build-arg SIMPLE_FULL_INSTALL=1 \
+        simple.sif apptainer.def
+
+    Build with a specific GPU arch (e.g. Ada Lovelace):
+      apptainer build --nv \
+        --build-arg TORCH_CUDA_ARCH_LIST=8.9+PTX \
+        simple.sif apptainer.def
+
+    Run interactive shell:
+      apptainer run --nv simple.sif
+
+    Execute a command:
+      apptainer exec --nv simple.sif uv run eval --headless
+
+    Bind-mount data and persistent uv cache:
+      apptainer run --nv \
+        --bind /path/to/data:/workspace/SIMPLE/data \
+        --bind $PWD/.uv-cache:/workspace/.uv-cache \
+        simple.sif
