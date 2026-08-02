@@ -117,7 +117,7 @@ def _init_replay_exporter(save_dir: str, fps: int, task_prompt: str, obj_names: 
     return exporter
 
 
-def _build_replay_frame(row, isaac_image, source_features: dict):
+def _build_replay_frame(row, isaac_image, source_features: dict, num_objects: int = 0):
     """Build a recording frame from a source parquet row and an Isaac-rendered image."""
     frame = {
         "observation.images.ego_view": isaac_image,
@@ -150,9 +150,15 @@ def _build_replay_frame(row, isaac_image, source_features: dict):
     #         row["observation.torso_rpy_command"], dtype=np.float64
     #     )
     if "observation.object_poses" in source_features:
-        frame["observation.object_poses"] = np.asarray(
-            row["observation.object_poses"], dtype=np.float64
-        )
+        # Source dataset pads observation.object_poses to a fixed max-slot
+        # size (e.g. 30 totes' worth) regardless of how many were actually
+        # live that episode -- the output schema (_init_replay_exporter),
+        # by contrast, is sized exactly to num_objects (the live count for
+        # *this* episode). Slice to the first num_objects*7 values instead
+        # of passing the raw (padded) array through, or exporter.add_frame
+        # rejects it as a shape mismatch.
+        source_poses = np.asarray(row["observation.object_poses"], dtype=np.float64)
+        frame["observation.object_poses"] = source_poses[: num_objects * 7]
 
     return frame
 
@@ -361,7 +367,7 @@ def main(
                 if exporter is not None and isaac_sim is not None:
                     rendered = isaac_sim.render()
                     isaac_image = rendered["head_stereo_left"]
-                    frame = _build_replay_frame(row, isaac_image, features)
+                    frame = _build_replay_frame(row, isaac_image, features, num_objects=num_objects)
                     exporter.add_frame(frame)
 
                 # Pace to dataset fps (skip when recording for speed)

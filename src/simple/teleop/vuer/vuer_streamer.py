@@ -49,7 +49,7 @@ class VuerStreamer(BaseStreamer):
 
     # Navigation constants (match PicoStreamer)
     _DEAD_ZONE        = 0.1
-    _MAX_LINEAR_VEL   = 0.7   # m/s
+    _MAX_LINEAR_VEL   = 0.8   # m/s
     _MAX_ANGULAR_VEL  = 1.0   # rad/s
     _CONTROL_DT       = 1.0 / 50.0  # fixed 50 Hz call-rate assumption
 
