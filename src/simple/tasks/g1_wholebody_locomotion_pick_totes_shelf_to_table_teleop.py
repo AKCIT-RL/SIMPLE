@@ -7,6 +7,7 @@ Licensed under the terms in LICENSE file.
 
 from __future__ import annotations
 
+import random
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 if TYPE_CHECKING:
@@ -24,6 +25,7 @@ from simple.core.task import Task
 from simple.core.types import Pose
 from simple.dr import *
 from simple.dr.manager import TabletopGraspDRManager
+from simple.dr.shelf_group import SHELF_SPECS
 from simple.dr.types import Box
 from simple.robots.protocols import Controllable
 from simple.robots.registry import RobotRegistry
@@ -59,6 +61,20 @@ _ROBOT_SPAWN_QUATERNION = [0.0, 0.0, 0.0, 1.0]  # yaw 180 deg (MuJoCo wxyz conve
 # Stop Point 3 of the VR guide (docs/teleop_simple_study/teleop_shelf_to_table_vr_guide.md).
 _STABLE_TILT_TOLERANCE_DEG = 15.0
 _WORLD_UP = np.array([0.0, 0.0, 1.0])
+
+# Visual highlight for the one tote (out of all spawned this episode) the
+# robot must actually deliver -- read by MujocoSimulator._build_object via
+# ObjectActor.rgba (see core/actor.py). Every other spawned tote keeps the
+# engine's default rgba (plain white collision-hull geoms, since the MuJoCo
+# engine never consumes textures/materials).
+_TARGET_TOTE_RGBA = [0.1, 0.3, 0.95, 1.0]  # blue
+
+# The target (blue) tote may only be picked among totes spawned on this tier
+# or lower -- tier letters encode height (A=lowest, increasing upward, see
+# SHELF_SPECS), so this exclude any tier above "D" (currently just "E" on
+# every shelf that has one). Non-target totes are unaffected and can still
+# spawn on any tier via the normal ShelfGroupDR occupancy.
+_MAX_TARGET_TIER_LETTER = "D"
 
 
 @TaskRegistry.register("g1_wholebody_locomotion_pick_totes_shelf_to_table_teleop")
@@ -111,7 +127,7 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
     dr_cfgs: dict[str, RandomizerCfg] = dict(
         language=LanguageDRCfg(
             instructions=[
-                "pick up a tote from the shelf and bring it to the table.",
+                "pick up the blue tote from the shelf and bring it to the table.",
             ]
         ),
         shelf_group=ShelfGroupDRCfg(
@@ -155,6 +171,7 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
         self._instruction = None
         self._layout = None
         self._contact_started = False
+        self._target_tote_key: Optional[str] = None
 
         self.robot_cfg.update(dict(uid=robot_uid))
 
@@ -212,6 +229,18 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
         see shelf_group's per-tier stochastic occupancy)."""
         return [k for k in self.layout.actors.keys() if k.startswith("target_")]
 
+    def _tote_tier_letter(self, key: str) -> str | None:
+        """Best-effort tier-letter lookup for a live tote, matched by its
+        spawn-time Z against SHELF_SPECS tier heights -- exact float match,
+        since this must be called right after reset(), before any physics
+        step can perturb the pose ShelfGroupDR assigned."""
+        z = self.layout.actors[key].pose.position[2]
+        for shelf in SHELF_SPECS.values():
+            for tier_letter, tier_z in shelf.tiers.items():
+                if abs(tier_z - z) < 1e-6:
+                    return tier_letter
+        return None
+
     def reset(
         self, seed: int | None = None, options: Optional[dict[str, Any]] = None
     ) -> None:
@@ -244,6 +273,21 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
         )
         self._layout.add_primitive("table", table_asset)
 
+        # Pick one spawned tote as this episode's delivery target and mark
+        # it visually (see _TARGET_TOTE_RGBA) -- min_per_shelf=2 per shelf x
+        # 3 shelves guarantees at least one live tote every reset. Restricted
+        # to tier <= _MAX_TARGET_TIER_LETTER (see constant) so the target
+        # never lands on the topmost, hardest-to-reach tier; fall back to
+        # any live tote in the rare case none qualify (e.g. every shelf's
+        # stochastic occupancy happened to land only on excluded tiers).
+        target_candidates = [
+            k for k in self._live_target_keys()
+            if (letter := self._tote_tier_letter(k)) is not None
+            and letter <= _MAX_TARGET_TIER_LETTER
+        ] or self._live_target_keys()
+        self._target_tote_key = random.choice(target_candidates)
+        self._layout.actors[self._target_tote_key].rgba = list(_TARGET_TOTE_RGBA)
+
         lang_dr = self.dr.get_randomizer("language")
         assert lang_dr is not None
         self._instruction = lang_dr(split)
@@ -253,7 +297,10 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
 
     def state_dict(self) -> Dict[str, Any]:
         state_dict = super().state_dict()
-        state_dict.update({"live_targets": self._live_target_keys()})
+        state_dict.update({
+            "live_targets": self._live_target_keys(),
+            "target_tote_key": self._target_tote_key,
+        })
         return state_dict
 
     def _tote_is_upright(self, key: str) -> bool:
@@ -273,26 +320,26 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
         cos_tilt = np.dot(local_z_in_world, _WORLD_UP)
         return cos_tilt >= np.cos(np.deg2rad(_STABLE_TILT_TOLERANCE_DEG))
 
-    def check_any_tote_on_table(self, *args, **kwargs) -> bool:
-        """True if any spawned tote is resting stably on the table -- in
-        contact with it AND upright (delivery goal: the robot only needs to
-        bring *a* tote, not all of them, but it has to land right-side-up,
-        not tipped over or balanced on an edge)."""
-        return self.tote_location_counts(*args, **kwargs)["table"] > 0
+    def check_target_tote_on_table(self, *args, **kwargs) -> bool:
+        """True if the episode's designated target tote (the blue one, see
+        `_target_tote_key`) is resting stably on the table -- in contact
+        with it AND upright. Delivering any *other* tote does not count."""
+        return self.target_tote_location_counts(*args, **kwargs)["table"] > 0
 
-    def tote_location_counts(self, *args, **kwargs) -> Dict[str, int]:
-        """Single contact-scan classifying every live tote by what it's
-        currently touching: 'shelf' (corridor0), 'table' (only if also
-        upright, see `_tote_is_upright` -- a tote merely touching the table
-        while tipped over isn't counted here, same as a tote touching
-        nothing tracked), or 'ground' (fell off). Used both for the live HUD
-        (X totes na estante / Y totes na mesa) and for ground-fall episode
-        discarding -- one scan instead of separate `check_*` passes over the
-        same contact list.
+    def tote_location_counts(self, *args, keys: Optional[list[str]] = None, **kwargs) -> Dict[str, int]:
+        """Single contact-scan classifying totes by what they're currently
+        touching: 'shelf' (corridor0), 'table' (only if also upright, see
+        `_tote_is_upright` -- a tote merely touching the table while tipped
+        over isn't counted here, same as a tote touching nothing tracked),
+        or 'ground' (fell off). Scans all live totes by default; pass `keys`
+        to restrict to a subset (see `target_tote_location_counts`). Used
+        both for the live HUD and for ground-fall episode discarding -- one
+        scan instead of separate `check_*` passes over the same contact
+        list.
         """
         mujoco_env = kwargs.get("mujoco_env", None)
         counts = {"shelf": 0, "table": 0, "ground": 0}
-        live_keys = self._live_target_keys()
+        live_keys = self._live_target_keys() if keys is None else list(keys)
         if not live_keys or mujoco_env is None:
             return counts
 
@@ -329,25 +376,32 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
                 counts["ground"] += 1
         return counts
 
+    def target_tote_location_counts(self, *args, **kwargs) -> Dict[str, int]:
+        """Same contact-scan as `tote_location_counts`, restricted to just
+        the episode's target tote (`_target_tote_key`) -- powers the
+        "N totes azuis na estante/mesa" HUD, which today is always 0 or 1
+        since there's exactly one target tote per episode."""
+        keys = [self._target_tote_key] if self._target_tote_key else []
+        return self.tote_location_counts(*args, keys=keys, **kwargs)
+
     def check_any_tote_on_ground(self, *args, **kwargs) -> bool:
         """True if any spawned tote has fallen off the shelf and hit the
-        ground -- signals the episode should be discarded, not saved."""
+        ground -- signals the episode should be discarded, not saved. Checks
+        every live tote (not just the target), since any tote crashing to
+        the ground indicates a physics/placement problem worth discarding
+        the episode over."""
         return self.tote_location_counts(*args, **kwargs)["ground"] > 0
 
     def check_hand_object_contact(self, *args, **kwargs) -> bool:
-        """True if any live tote is still in contact with a hand -- mirrors
-        `check_hand_object_contact` in the between_tables task, generalized
-        to "any" tote the same way `check_any_tote_on_table` is (this task
-        has no single fixed `target`). Used to require an actual release
-        before delivery counts, not just the tote resting against the table
-        while still gripped/pressed by the hand."""
+        """True if the target tote specifically is still in contact with a
+        hand. Restricted to the target (not "any" live tote) so that still
+        holding an unrelated, non-target tote in the other hand can't block
+        success once the target has actually been placed and released."""
         mujoco_env = kwargs.get("mujoco_env", None)
-        if mujoco_env is None:
+        if mujoco_env is None or self._target_tote_key is None:
             return False
 
-        live_body_names = {f"toteweg_{key}" for key in self._live_target_keys()}
-        if not live_body_names:
-            return False
+        live_body_names = {f"toteweg_{self._target_tote_key}"}
 
         mj_physics_data = mujoco_env.mjData
         mj_physics_model = mujoco_env.mjModel
@@ -370,7 +424,7 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
         return reward >= self.success_criteria
 
     def compute_reward(self, info: dict[str, Any], *args, **kwargs) -> float:
-        is_tote_on_table = self.check_any_tote_on_table(*args, **kwargs)
+        is_tote_on_table = self.check_target_tote_on_table(*args, **kwargs)
         is_tote_contacted_by_hand = self.check_hand_object_contact(*args, **kwargs)
 
         if is_tote_on_table and not is_tote_contacted_by_hand:

@@ -342,7 +342,7 @@ class MujocoSimulator(Simulator):
                 mass=0.1/num_convex,
                 # rubber on rough ground: large static, sliding and torisonal friction
                 friction=[0.8, 0.05, 0.005],
-                rgba=[1, 1, 1, 1],
+                rgba=getattr(actor, "rgba", None) or [1, 1, 1, 1],
                 # stiff contact and no oscillation
                 solref = [0.005, 2]
             )

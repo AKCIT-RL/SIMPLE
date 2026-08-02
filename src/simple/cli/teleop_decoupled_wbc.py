@@ -335,17 +335,23 @@ def main(
             # if "proprio" in info:
             #     agent.publish_low_state(info["proprio"])
 
-            # Live tote-location HUD (X totes na estante, Y totes na mesa) --
-            # only for tasks that expose tote_location_counts; no-op otherwise.
+            # Live tote-location HUD -- ground-fall discard check scans every
+            # live tote (tote_location_counts), while the on-screen counts
+            # shown to the operator are restricted to the episode's target
+            # tote (target_tote_location_counts), if the task exposes it.
+            # No-op for tasks that expose neither.
             tote_counts_fn = getattr(task, "tote_location_counts", None)
+            target_counts_fn = getattr(task, "target_tote_location_counts", tote_counts_fn)
             tote_fell = False
             if tote_counts_fn is not None:
                 tote_counts = tote_counts_fn(mujoco_env=sonic_env.mujoco)
-                agent.hud_lines = [
-                    f"{tote_counts['shelf']} TOTES NA ESTANTE",
-                    f"{tote_counts['table']} TOTES NA MESA",
-                ]
                 tote_fell = tote_counts["ground"] > 0
+            if target_counts_fn is not None:
+                target_counts = target_counts_fn(mujoco_env=sonic_env.mujoco)
+                agent.hud_lines = [
+                    f"{target_counts['shelf']} TOTE AZUL NA ESTANTE",
+                    f"{target_counts['table']} TOTE AZUL NA MESA",
+                ]
 
             if agent.reset_requested or tote_fell:
                 # Discard any in-progress recording

@@ -116,12 +116,18 @@ class ActorReigstry(Generic[T]): # RegistryMixin[Actor]
 class ObjectActor(Actor):
     """Actor representing an object in the simulation."""
     asset: Asset
-    material: dict 
+    material: dict
+    rgba: list[float] | None
 
     def __init__(self, asset: Asset, uid:str|None=None) -> None:
         self.uid = asset.uid if uid is None else uid
         self.asset = asset
         self.pose = Pose()
+        # Per-instance MuJoCo geom color override (read by
+        # MujocoSimulator._build_object); None means "use the engine
+        # default". Distinct from `material`, which is Omniverse/Isaac-only
+        # shader params never consumed by the MuJoCo engine.
+        self.rgba = None
 
     def set_material(self, material: dict) -> None:
         self.material = material
