@@ -13,3 +13,5 @@ from .objects import ObjectsAssetManager
 from .objaverse import ObjaverseAssetManager
 from .primitive import PrimitiveAsseManager, Primitive, Box
 from .articulate import ArticulatedAssetManager
+from .totes import TotesAssetManager
+from .industrial_parts import IndustrialPartsAssetManager
