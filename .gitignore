@@ -96,3 +96,8 @@ media_gen/
 isaac_resources/
 third_party/usd2mjcf/.venv/
 weglog/
+
+# data_test: only the new teleop capture is versioned, not lazy-downloaded assets
+data_test/*
+!data_test/README.md
+!data_test/teleop_decoupled_wbc
