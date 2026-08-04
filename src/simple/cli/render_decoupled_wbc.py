@@ -150,13 +150,10 @@ def _build_replay_frame(row, isaac_image, source_features: dict, num_objects: in
     #         row["observation.torso_rpy_command"], dtype=np.float64
     #     )
     if "observation.object_poses" in source_features:
-        # Source dataset pads observation.object_poses to a fixed max-slot
-        # size (e.g. 30 totes' worth) regardless of how many were actually
-        # live that episode -- the output schema (_init_replay_exporter),
-        # by contrast, is sized exactly to num_objects (the live count for
-        # *this* episode). Slice to the first num_objects*7 values instead
-        # of passing the raw (padded) array through, or exporter.add_frame
-        # rejects it as a shape mismatch.
+        # Both source and output schemas are padded to the same fixed
+        # max-slot count (num_objects here is that fixed count, not the
+        # live per-episode sim object count -- see fixed_num_objects in
+        # main()), so this is a passthrough/no-op slice in practice.
         source_poses = np.asarray(row["observation.object_poses"], dtype=np.float64)
         frame["observation.object_poses"] = source_poses[: num_objects * 7]
 
@@ -246,6 +243,16 @@ def main(
     has_object_poses = "observation.object_poses" in features
     print(f"Features: base_pose={has_base_pose}, base_vel={has_base_vel}, object_poses={has_object_poses}")
 
+    # Fixed object-slot count for the *output* recording schema. The source
+    # dataset already pads observation.object_poses to a fixed max-slot size
+    # (e.g. stochastic shelf_group tote counts per episode), so read the slot
+    # count from its schema rather than the live per-episode sim object count
+    # -- the latter varies episode to episode and breaks the exporter's fixed
+    # LeRobot feature shape (e.g. 4 live totes vs 5 live totes).
+    obj_poses_feature = features.get("observation.object_poses")
+    fixed_num_objects = (obj_poses_feature["shape"][0] // 7) if obj_poses_feature else 0
+    fixed_obj_names = [f"target_{i}" for i in range(fixed_num_objects)]
+
     # Create environment with Isaac Sim rendering
     config = tyro.cli(SimLoopConfig, config=(tyro.conf.ConsolidateSubcommandArgs,), args=[])
     sonic_config = config.load_wbc_yaml()
@@ -311,12 +318,12 @@ def main(
             if record and exporter is None:
                 task_prompt = _load_episode_tasks(data_dir)[0]
                 exporter = _init_replay_exporter(
-                    f"{os.path.abspath(save_dir)}/{sonic_env.spec.id}/level-{dr_level}", 
-                    dataset_fps, task_prompt, obj_names_labels,
+                    f"{os.path.abspath(save_dir)}/{sonic_env.spec.id}/level-{dr_level}",
+                    dataset_fps, task_prompt, fixed_obj_names,
                     robot.joint_names
                 )
                 print(f"[Record] Exporter initialized, saving to {save_dir}")
-                print(f"[Record] Recording {len(obj_names_labels)} objects: {obj_names_labels}")
+                print(f"[Record] Recording {fixed_num_objects} object slots (fixed schema): {fixed_obj_names}")
 
             # Dataset joint names for mapping observation.state → MuJoCo joints
             # dataset_joint_names = features["observation.state"]["names"]
@@ -367,7 +374,7 @@ def main(
                 if exporter is not None and isaac_sim is not None:
                     rendered = isaac_sim.render()
                     isaac_image = rendered["head_stereo_left"]
-                    frame = _build_replay_frame(row, isaac_image, features, num_objects=num_objects)
+                    frame = _build_replay_frame(row, isaac_image, features, num_objects=fixed_num_objects)
                     exporter.add_frame(frame)
 
                 # Pace to dataset fps (skip when recording for speed)
