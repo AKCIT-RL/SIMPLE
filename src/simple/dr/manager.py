@@ -139,31 +139,45 @@ class TabletopGraspDRManager(DRManager):
             # keep original settings
             pass
         elif dr_level > 0:
-            # dr_level=1
-            lighting_dr = deepcopy(self.randomizers.get("lighting"))
-            lighting_dr.cfg.light_mode = "fixed"
-            material_dr = deepcopy(self.randomizers.get("material"))
-            material_dr.cfg.material_mode = "fixed"
-            scene_dr = deepcopy(self.randomizers.get("scene"))
-            scene_dr.cfg.scene_mode = "fixed"
-            scene_dr.cfg.room_choices = ["scene0"] # a specific scene "scene0, scene1, ..., scene5"
+            # dr_level=1 -- only adjust randomizers this task actually declared;
+            # tasks that build their scene/lighting/material outside of dr_cfgs
+            # (e.g. the totes shelf-to-table task, which adds corridor/table
+            # directly in reset()) simply have nothing to fix here for that key.
+            lighting_dr = self.randomizers.get("lighting")
+            if lighting_dr is not None:
+                lighting_dr = deepcopy(lighting_dr)
+                lighting_dr.cfg.light_mode = "fixed"
+                self.randomizers["lighting"] = lighting_dr
 
-            self.randomizers["lighting"] = lighting_dr
-            self.randomizers["material"] = material_dr
-            self.randomizers["scene"] = scene_dr
-            
+            material_dr = self.randomizers.get("material")
+            if material_dr is not None:
+                material_dr = deepcopy(material_dr)
+                material_dr.cfg.material_mode = "fixed"
+                self.randomizers["material"] = material_dr
+
+            scene_dr = self.randomizers.get("scene")
+            if scene_dr is not None:
+                scene_dr = deepcopy(scene_dr)
+                scene_dr.cfg.scene_mode = "fixed"
+                scene_dr.cfg.room_choices = ["scene0"] # a specific scene "scene0, scene1, ..., scene5"
+                self.randomizers["scene"] = scene_dr
+
             # dr_level=2
-            if dr_level > 1: 
-                distractors_dr = deepcopy(self.randomizers.get("distractors"))
-                distractors_dr.cfg.number_of_distractors = 0
-                self.randomizers["distractors"] = distractors_dr
+            if dr_level > 1:
+                distractors_dr = self.randomizers.get("distractors")
+                if distractors_dr is not None:
+                    distractors_dr = deepcopy(distractors_dr)
+                    distractors_dr.cfg.number_of_distractors = 0
+                    self.randomizers["distractors"] = distractors_dr
 
                 # dr_level=3
                 if dr_level > 2:
-                    spatial_dr = deepcopy(self.randomizers.get("spatial"))
-                    spatial_dr.cfg.spatial_mode = "fixed"
-                    spatial_dr.cfg.fixed_stable_pose_idx = 0 # default to first stable pose
-                    self.randomizers["spatial"] = spatial_dr
+                    spatial_dr = self.randomizers.get("spatial")
+                    if spatial_dr is not None:
+                        spatial_dr = deepcopy(spatial_dr)
+                        spatial_dr.cfg.spatial_mode = "fixed"
+                        spatial_dr.cfg.fixed_stable_pose_idx = 0 # default to first stable pose
+                        self.randomizers["spatial"] = spatial_dr
 
     
 
