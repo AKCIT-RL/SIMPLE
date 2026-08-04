@@ -64,9 +64,44 @@ Em `src/simple/cli/render_decoupled_wbc.py` e `replay_decoupled_wbc.py`, nova
 opção `--isaac-background-usd <path>` seta essa env var antes de criar o
 ambiente — não precisa exportar a variável manualmente se usar a flag.
 
-**Importante**: nada disto foi testado com Isaac Sim de verdade — esta
-máquina não tem GPU capaz de rodar Isaac. A validação real é o objetivo deste
-guia, na máquina com RTX 4090/5080.
+**Atualização (validado numa RTX 4090 de verdade)**: o pipeline já rodou
+ponta a ponta. O comando confirmado, usado para validar as capturas depois da
+correção do bug de troca de estante (ver
+`docs/teleop_simple_study/isaac_shelf_swap_investigation.md`), é:
+
+```bash
+render-decoupled-wbc simple/G1WholebodyLocomotionPickTotesShelfToTableTeleop-v0 \
+  --data-dir data_test/teleop_decoupled_wbc/simple/G1WholebodyLocomotionPickTotesShelfToTableTeleop-v0/level-0 \
+  --sim-mode mujoco_isaac \
+  --record \
+  --save-dir data_test/render_decoupled_wbc \
+  --headless \
+  --isaac-background-usd https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/4.5/Isaac/Environments/Simple_Warehouse/warehouse.usd
+```
+
+Duas diferenças importantes em relação ao resto deste guia (escrito antes da
+validação real, mantido abaixo por contexto histórico e por cobrir cenários
+que essa validação não exercitou, como `data/` completo e ajuste fino do
+backdrop):
+
+- **`--data-dir data_test/...`, não `data/...`**: ao contrário de `data/`
+  (gitignored, `.gitignore:51`, precisa `rsync`/`scp` manual — seção 2), o
+  fixture em `data_test/teleop_decoupled_wbc/simple/G1WholebodyLocomotionPickTotesShelfToTableTeleop-v0/`
+  **já está commitado no repositório** (confirmado via `git ls-files`) — não
+  precisa transferir nada, só `git checkout`/`pull` da branch.
+- **URL de nuvem no lugar de `omniverse://localhost/...`**: a máquina de
+  validação não tinha nenhum Nucleus rodando em `localhost`
+  (`omni.client.list`/`stat` retornavam `Result.ERROR_CONNECTION`). A URL de
+  nuvem pública da NVIDIA acima resolveu — sem nenhuma mudança de código —
+  tanto o acesso ao asset quanto a iluminação do ambiente (ver
+  `docs/source/tutorials/isaac_render_photorealism_fixes.md`, seção "O que
+  resolveu a escuridão"). Prefira essa URL como primeira tentativa; só
+  investigue um Nucleus local (seção 1.4) se precisar rodar sem acesso à
+  internet.
+
+Trocar `--record --save-dir ...` por nada (sem gravar, só visualizar) e
+`--headless` por `--no-headless` reproduz o fluxo de inspeção visual rápida
+descrito nas seções 3.1/3.2 abaixo.
 
 ## 1. Preparar a máquina de destino
 
@@ -173,13 +208,16 @@ aparece no Isaac (passos 1 e 2 do que foi implementado):
 
 ```bash
 render-decoupled-wbc simple/G1WholebodyLocomotionPickTotesShelfToTableTeleop-v0 \
-  --data-dir data/teleop_decoupled_wbc/simple/G1WholebodyLocomotionPickTotesShelfToTableTeleop-v0/level-0 \
+  --data-dir data_test/teleop_decoupled_wbc/simple/G1WholebodyLocomotionPickTotesShelfToTableTeleop-v0/level-0 \
   --sim-mode mujoco_isaac \
   --num-episodes 1 \
-  --headless=False
+  --no-headless
 ```
 
-Com `--headless=False` (e `--webrtc` ligado por padrão) a viewport do Isaac
+(troque `data_test/...` por `data/...` se estiver validando uma captura maior
+transferida manualmente pela seção 2, em vez do fixture já commitado.)
+
+Com `--no-headless` (e `--webrtc` ligado por padrão) a viewport do Isaac
 deve abrir. Verifique visualmente: sem crash no reset, prateleiras/corredor
 (`corridor0`), mesa e totes visíveis, robô se movendo conforme os dados
 gravados.
@@ -188,14 +226,15 @@ gravados.
 
 ```bash
 render-decoupled-wbc simple/G1WholebodyLocomotionPickTotesShelfToTableTeleop-v0 \
-  --data-dir data/teleop_decoupled_wbc/simple/G1WholebodyLocomotionPickTotesShelfToTableTeleop-v0/level-0 \
+  --data-dir data_test/teleop_decoupled_wbc/simple/G1WholebodyLocomotionPickTotesShelfToTableTeleop-v0/level-0 \
   --sim-mode mujoco_isaac \
   --num-episodes 1 \
-  --headless=False \
-  --isaac-background-usd omniverse://localhost/NVIDIA/Assets/Isaac/4.5/Isaac/Environments/Simple_Warehouse/warehouse.usd
+  --no-headless \
+  --isaac-background-usd https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/4.5/Isaac/Environments/Simple_Warehouse/warehouse.usd
 ```
 
-(troque o caminho pelo confirmado no passo 1.4). Verifique visualmente que o
+(troque pelo caminho de um Nucleus local, confirmado no passo 1.4, só se
+precisar rodar sem acesso à internet). Verifique visualmente que o
 Warehouse aparece ao redor da cena sem cobrir/deslocar `corridor0`, mesa ou
 totes. Se a posição/escala estiver errada (chão do warehouse não alinhado
 com o chão da cena, por exemplo), ver "Ajustando o backdrop" abaixo.
@@ -206,18 +245,24 @@ Só depois dos dois checks acima passarem:
 
 ```bash
 render-decoupled-wbc simple/G1WholebodyLocomotionPickTotesShelfToTableTeleop-v0 \
-  --data-dir data/teleop_decoupled_wbc/simple/G1WholebodyLocomotionPickTotesShelfToTableTeleop-v0/level-0 \
+  --data-dir data_test/teleop_decoupled_wbc/simple/G1WholebodyLocomotionPickTotesShelfToTableTeleop-v0/level-0 \
   --sim-mode mujoco_isaac \
-  --headless=True \
+  --headless \
   --record \
-  --save-dir data/render_decoupled_wbc/simple/G1WholebodyLocomotionPickTotesShelfToTableTeleop-v0 \
-  --isaac-background-usd omniverse://localhost/NVIDIA/Assets/Isaac/4.5/Isaac/Environments/Simple_Warehouse/warehouse.usd
+  --save-dir data_test/render_decoupled_wbc \
+  --isaac-background-usd https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/4.5/Isaac/Environments/Simple_Warehouse/warehouse.usd
 ```
+
+Este é o comando validado de fato numa RTX 4090 (ver nota no início deste
+documento). Notas:
 
 - Omita `--num-episodes` (ou use `-1`, o padrão) para processar todos os
   episódios do `--data-dir`.
-- `--headless=True` é recomendado para a passada final (mais rápido, sem
-  overhead de viewport).
+- `--headless` é recomendado para a passada final (mais rápido, sem overhead
+  de viewport).
+- `--save-dir` pode ser qualquer caminho — o script cria
+  `<--save-dir>/<env_id>/level-0/` automaticamente (não precisa incluir o
+  `env_id` no caminho passado).
 
 ### Onde ficam os outputs
 
