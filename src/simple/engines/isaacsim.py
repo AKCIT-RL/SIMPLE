@@ -228,17 +228,23 @@ class IsaacSimSimulator(Simulator):
     # MuJoCo (that pose is what both physics AND the SHELF_SPECS tote
     # placements are calibrated against; shifting it would misalign the
     # totes from the real shelf collision just to fix a rendering quirk).
-    # corridor0's raw display USD (referenced directly by Isaac) has a
-    # different origin than the MJCF-derived collision mesh MuJoCo/physics
-    # use -- confirmed by comparing AABBs directly: X centers differ by
-    # ~0.185m, Y centers by ~0.219m (Z matches within ~1.7cm, no correction
-    # needed there). Y width also differs (~0.30m narrower in the raw USD),
-    # a residual mismatch a pure translation can't fully fix -- not
-    # calibrated against a real render, tune by inspecting the first
-    # rendered frame on a GPU machine.
-    _VISUAL_POSITION_CORRECTIONS = {
-        "corridor0": (-0.185, -0.219, 0.0),
-    }
+    # Empty as of the corridor0.usd regeneration (see
+    # third_party/usd2mjcf/eval/regenerate_corridor0_usd.py): the previous
+    # (-0.185, -0.219, 0.0) entry for "corridor0" compensated for
+    # corridor0.usd being stale -- it was still the pre-"Row swap" mesh
+    # (docs/teleop_simple_study/toteweg_factory_scene_migration_plan.md,
+    # section 7a) because that swap only rewrote the MJCF-side .obj files,
+    # never regenerated the .usd Isaac actually renders (confirmed by the
+    # stale corridor0.usd being byte-identical to corridor0_legacy/corridor0.usd
+    # via md5sum, and by AABB comparison showing the same ~0.185/0.219m
+    # offset this correction was papering over). corridor0.usd is now
+    # rebuilt directly from the same (post-swap) MJCF/visuals/corridor0.obj
+    # that MuJoCo's collision is built from, so their origins coincide by
+    # construction -- verified via AABB re-comparison (see the script above),
+    # not yet via an actual Isaac render (needs a GPU machine). If a future
+    # fixture asset needs a similar correction, add it back here with the
+    # same AABB-diagnosis approach, not a guessed offset.
+    _VISUAL_POSITION_CORRECTIONS: dict[str, tuple[float, float, float]] = {}
 
     def __init__(self, task:Task, render_hz: int=30, headless: bool=False) -> None:
         self._config_isaac()

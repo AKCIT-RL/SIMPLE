@@ -49,13 +49,13 @@ _TABLE_SIZE = (1.2, 0.8, 0.1)  # not yet confirmed against real reach requiremen
 # front (l1/l3 structure starts at y=1.523, measured from the corridor0
 # collision mesh), further than the aisle midline used to be, at the
 # user's request. Quaternion is _yaw_quat(90deg) in shelf_group.py's
-# convention -- G1 faces +X at yaw=0 (inferred from the old spawn's
-# yaw=180 facing -X, i.e. down the corridor toward the table at very
-# negative x), so yaw=90 should face +Y, toward l1/l3. Not verified on
-# real hardware yet -- confirm visually on the GPU machine; if backwards,
-# try yaw=-90 (quaternion [0.7071068, 0, 0, -0.7071068]) instead.
+# convention -- confirmed correct by a real render (the robot's own body
+# orientation faces l1/l3 as intended); a same-session +90/-90 back-and-forth
+# over a misread symptom is not repeated here, see git history if curious.
+# The bug that render actually surfaced was about which shelf appears in
+# front, not the robot's own orientation -- being investigated separately.
 _ROBOT_SPAWN_POSITION = [-1.996, 0.5, 0.0]
-_ROBOT_SPAWN_QUATERNION = [0.7071068, 0.0, 0.0, 0.7071068]  # yaw 90 deg, facing +Y toward l1/l3
+_ROBOT_SPAWN_QUATERNION = [0.7071068, 0.0, 0.0, 0.7071068]  # yaw 90 deg, facing l1/l3 -- confirmed correct
 
 # r1/r2/r3 (the estantes that used to hold totes on the aisle's other side)
 # are no longer spawn targets -- replaced by plain gray box primitives of
@@ -323,12 +323,28 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
         # hardest-to-reach tier; fall back to any live tote in the rare case
         # none qualify (e.g. every shelf's stochastic occupancy happened to
         # land only on excluded tiers).
-        target_candidates = [
-            k for k in self._live_target_keys()
-            if (letter := self._tote_tier_letter(k)) is not None
-            and letter <= _MAX_TARGET_TIER_LETTER
-        ] or self._live_target_keys()
-        self._target_tote_key = random.choice(target_candidates)
+        #
+        # Replay fidelity: when `options["state_dict"]` is a previously
+        # recorded episode (see render_decoupled_wbc.py, which re-runs
+        # reset() with the captured state to re-render it in Isaac), the
+        # shelf_group placements themselves replay exactly (Randomizer
+        # ._transient returns the loaded state instead of resampling -- see
+        # core/randomizer.py), but this target pick used to always
+        # random.choice() a *new* key regardless, so a replayed render could
+        # highlight/deliver a different tote than the one actually recorded
+        # in the capture. Prefer the recorded key when it's still live.
+        recorded_state = (options or {}).get("state_dict")
+        recorded_target_key = recorded_state.get("target_tote_key") if recorded_state else None
+        live_keys = self._live_target_keys()
+        if recorded_target_key is not None and recorded_target_key in live_keys:
+            self._target_tote_key = recorded_target_key
+        else:
+            target_candidates = [
+                k for k in live_keys
+                if (letter := self._tote_tier_letter(k)) is not None
+                and letter <= _MAX_TARGET_TIER_LETTER
+            ] or live_keys
+            self._target_tote_key = random.choice(target_candidates)
         target_actor = self._layout.actors[self._target_tote_key]
         target_actor.pose = retarget_tote_pose(target_actor.pose, from_name="bin_b04", to_name="toteweg")
         target_actor.asset = AssetManager.get("totes").load("toteweg")
