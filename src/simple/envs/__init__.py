@@ -409,6 +409,12 @@ register(
 )
 
 register(
+    id="simple/G1WholebodyBendPickTeleop-v0",
+    entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
+    kwargs={"task":"g1_wholebody_bend_pick_teleop"},
+)
+
+register(
     id="simple/G1WholebodyPickAndPlaceAndHugContainerTeleop-v0",
     entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
     kwargs={"task":"g1_wholebody_pick_and_place_and_hug_container_teleop"},
