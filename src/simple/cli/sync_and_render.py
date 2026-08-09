@@ -106,7 +106,15 @@ def _stage_session(api, raw_repo_id: str, session_prefix: str, local_stage_dir: 
     return staged_dir, metadata
 
 
-def _run_render(env_id: str, staged_dir: Path, render_save_root: Path, sim_mode: str, headless: bool, dr_level: int):
+def _run_render(
+    env_id: str,
+    staged_dir: Path,
+    render_save_root: Path,
+    sim_mode: str,
+    headless: bool,
+    dr_level: int,
+    isaac_background_usd: str | None,
+):
     cmd = [
         "render-decoupled-wbc", env_id,
         "--data-dir", str(staged_dir),
@@ -116,6 +124,8 @@ def _run_render(env_id: str, staged_dir: Path, render_save_root: Path, sim_mode:
         "--save-dir", str(render_save_root),
         "--dr-level", str(dr_level),
     ]
+    if isaac_background_usd:
+        cmd += ["--isaac-background-usd", isaac_background_usd]
     print(f"[sync-and-render] running: {' '.join(cmd)}")
     subprocess.run(cmd, check=True)
     return render_save_root / env_id / f"level-{dr_level}"
@@ -201,6 +211,14 @@ def main(
     skip_psi0: Annotated[bool, typer.Option(help="Skip the psi0 rebuild/upload stage entirely.")] = False,
     sim_mode: Annotated[str, typer.Option()] = "mujoco_isaac",
     headless: Annotated[bool, typer.Option()] = True,
+    isaac_background_usd: Annotated[
+        str | None,
+        typer.Option(envvar="SIMPLE_ISAAC_BACKGROUND_USD", help=(
+            "USD path/URL for the purely-visual Isaac Sim backdrop (e.g. the SimReady "
+            "Warehouse environment), passed through to render-decoupled-wbc's own "
+            "--isaac-background-usd. See docs/source/tutorials/isaac_warehouse_rendering.md."
+        )),
+    ] = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/4.5/Isaac/Environments/Simple_Warehouse/warehouse.usd",
     limit: Annotated[int, typer.Option(help="Max sessions to process this run, -1 = all pending.")] = -1,
     keep_local: Annotated[bool, typer.Option(help="Don't delete staged raw/rendered dirs after upload.")] = False,
     dry_run: Annotated[bool, typer.Option(help="List pending sessions and exit, no download/render/upload.")] = False,
@@ -248,6 +266,7 @@ def main(
         render_save_root = render_save_dir / raw_metadata["operator"] / raw_metadata["session_timestamp"]
         rendered_dir = _run_render(
             raw_metadata["env_id"], staged_dir, render_save_root, sim_mode, headless, raw_metadata["dr_level"],
+            isaac_background_usd,
         )
 
         info_path = rendered_dir / "meta" / "info.json"

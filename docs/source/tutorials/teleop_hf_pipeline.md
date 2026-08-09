@@ -124,7 +124,12 @@ to run in a plain process. Per run:
    `SimulationApp` is a hard process-wide singleton
    (`src/simple/envs/base_dual_env.py`: `assert not _ISAAC_LOADED`), so this cannot be called
    in-process in a loop. Expect ~30-90s Isaac Sim cold start per session; batching isn't
-   supported by `render-decoupled-wbc` today (one dataset in, one dataset out).
+   supported by `render-decoupled-wbc` today (one dataset in, one dataset out). Always passes
+   `--isaac-background-usd` through to `render-decoupled-wbc` (`--isaac-background-usd`/
+   `SIMPLE_ISAAC_BACKGROUND_USD`, defaults to the SimReady Warehouse USD) — without it, tasks
+   that build their own scenario geometry render without the intended visual backdrop. See
+   `docs/source/tutorials/isaac_warehouse_rendering.md` for how to confirm the right USD path
+   for a given Isaac/Nucleus setup.
 4. Synthesize `metadata.json` for the rendered tree (render-decoupled-wbc doesn't write one),
    validate it, upload to `HF_REPO_RENDERED`.
 5. Write `render_status.json` back to the raw repo.
