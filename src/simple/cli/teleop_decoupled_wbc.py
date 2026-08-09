@@ -61,9 +61,63 @@ def _save_episode_env_config(exporter, task, episode_index: int):
             f.write(json.dumps(entry) + "\n")
 
 
-def _init_exporter(save_dir: str, task_prompt: str, robot_model, obj_names: list[str], joint_names: list[str]):
+def _prompt_task_instruction(default_instruction: str) -> str:
+    """Ask the operator to confirm/override the task instruction that will be
+    recorded with every frame of this session. Enter alone keeps the default."""
+    answer = input(f"[Record] Instrução da tarefa [{default_instruction}]: ").strip()
+    task_prompt = answer if answer else default_instruction
+    print(f'[Record] Usando instrução: "{task_prompt}"')
+    return task_prompt
+
+
+def _write_session_metadata(
+    run_save_dir: str,
+    operator: str,
+    session_ts: str,
+    env_id: str,
+    dr_level: int,
+    sim_mode: str,
+    task_prompt: str,
+):
+    """Write the initial session metadata.json, tracking pipeline status
+    (raw_captured -> uploaded -> rendered) separately from the LeRobot-native
+    meta/info.json (which Gr00tDataExporter owns and shouldn't be hand-edited)."""
+    import socket
+    metadata = {
+        "schema_version": 1,
+        "operator": operator,
+        "session_timestamp": session_ts,
+        "env_id": env_id,
+        "dr_level": dr_level,
+        "task_prompt": task_prompt,
+        "status": "raw_captured",
+        "num_episodes": None,
+        "created_at_utc": datetime.utcnow().isoformat() + "Z",
+        "sim_mode": sim_mode,
+        "hostname": socket.gethostname(),
+    }
+    with open(os.path.join(run_save_dir, "metadata.json"), "w") as f:
+        json.dump(metadata, f, indent=2)
+
+
+def _finalize_session_metadata(run_save_dir: str, episodes_saved: int):
+    """Patch num_episodes/finished_at_utc into metadata.json on exit (normal
+    completion or interruption), so a partial session still has an honest
+    episode count for the pre-upload validator to check."""
+    meta_path = os.path.join(run_save_dir, "metadata.json")
+    if not os.path.exists(meta_path):
+        return
+    with open(meta_path, "r") as f:
+        metadata = json.load(f)
+    metadata["num_episodes"] = episodes_saved
+    metadata["finished_at_utc"] = datetime.utcnow().isoformat() + "Z"
+    with open(meta_path, "w") as f:
+        json.dump(metadata, f, indent=2)
+
+
+def _init_exporter(save_dir: str, task_prompt: str, robot_model, obj_names: list[str], joint_names: list[str], operator: str):
     """Create a Gr00tDataExporter for LeRobot-format recording."""
-    from decoupled_wbc.data.exporter import Gr00tDataExporter
+    from decoupled_wbc.data.exporter import Gr00tDataExporter, DataCollectionInfo
     from decoupled_wbc.data.utils import get_dataset_features, get_modality_config
 
     features = get_dataset_features(robot_model)
@@ -96,6 +150,7 @@ def _init_exporter(save_dir: str, task_prompt: str, robot_model, obj_names: list
         features=features,
         modality_config=modality_config,
         task=task_prompt,
+        data_collection_info=DataCollectionInfo(teleoperator_username=operator),
     )
     return exporter
 
@@ -204,7 +259,8 @@ def main(
     num_episodes: Annotated[int, typer.Option()] = 100,
     shard_size: Annotated[int, typer.Option()] = 100,
     dr_level: Annotated[int, typer.Option()] = 0,
-    record: Annotated[bool, typer.Option()] = False
+    record: Annotated[bool, typer.Option()] = False,
+    operator: Annotated[str, typer.Option(envvar="SIMPLE_OPERATOR")] = os.getenv("USER", "unknown"),
 ):
     assert sim_mode in ["mujoco"], f"Invalid sim_mode {sim_mode} for teleop."
     sim_cnt = 0
@@ -299,17 +355,21 @@ def main(
     obj_names_schema = _object_poses_schema(task, obj_names)
 
     if record:
-        # timestamp = datetime.now().strftime("%m%d%H%M%S")
+        session_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         run_save_dir = (
-            f"{os.path.abspath(save_dir)}/{sonic_env.spec.id}/level-{dr_level}" #_{timestamp}
+            f"{os.path.abspath(save_dir)}/{sonic_env.spec.id}/level-{dr_level}"
+            f"/sessions/{session_ts}__{operator}"
         )
+        task_prompt = _prompt_task_instruction(task.instruction)
         exporter = _init_exporter(
             run_save_dir,
-            task.instruction,
+            task_prompt,
             agent._dwbc_robot_model,
             obj_names_schema,
-            robot.joint_names
+            robot.joint_names,
+            operator,
         )
+        _write_session_metadata(run_save_dir, operator, session_ts, sonic_env.spec.id, dr_level, sim_mode, task_prompt)
         print(f"\n[Record] Exporter initialized, saving to {run_save_dir}")
         print(f"[Record] observation.object_poses schema: {len(obj_names_schema)} slots ({obj_names_schema})")
         print(f"[Record] First episode has {len(obj_names)} live objects: {obj_names}")
@@ -495,6 +555,7 @@ def main(
             step_pbar.close()
         if exporter is not None:
             exporter.stop_video_writers()
+            _finalize_session_metadata(run_save_dir, episodes_saved)
             print(f"[Record] Done. {episodes_saved} episodes saved to {run_save_dir}")
         env.close()
         agent.close()

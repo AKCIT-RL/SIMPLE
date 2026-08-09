@@ -91,11 +91,13 @@ MUJOCO_LOG.TXT
 .claude/*
 .runtime-state/
 .robo-nix/
-docs/teleop_simple_study/
+docs/teleop_simple_study/*
+!docs/teleop_simple_study/vr_teleop_beginners_guide.md
 media_gen/
 isaac_resources/
 third_party/usd2mjcf/.venv/
 weglog/
+datasets_to_be_converted/
 
 # data_test: only the new teleop capture is versioned, not lazy-downloaded assets.
 # The broad "videos" rule above (and any other generic pattern) still matches

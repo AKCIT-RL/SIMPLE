@@ -14,3 +14,5 @@ replay
 eval
 docker
 isaac_warehouse_rendering
+isaac_render_photorealism_fixes
+teleop_hf_pipeline

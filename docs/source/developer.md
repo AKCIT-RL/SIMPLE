@@ -108,3 +108,7 @@ except FileNotFoundError:
 hf upload USC-PSI-Lab/SIMPLE . --repo-type=dataset
 ```
 
+For the teleop capture data pipeline specifically (raw episodes → HF → re-render → HF), see
+`docs/source/tutorials/teleop_hf_pipeline.md` — it uses the same `HF_TOKEN` convention above via
+dedicated `upload-teleop-session` / `sync-and-render` CLIs instead of the manual `hf upload`.
+
