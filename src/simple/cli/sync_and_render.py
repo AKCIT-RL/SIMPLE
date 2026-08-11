@@ -114,6 +114,7 @@ def _run_render(
     headless: bool,
     dr_level: int,
     isaac_background_usd: str | None,
+    skip_episodes: str = "",
 ):
     cmd = [
         "render-decoupled-wbc", env_id,
@@ -126,6 +127,8 @@ def _run_render(
     ]
     if isaac_background_usd:
         cmd += ["--isaac-background-usd", isaac_background_usd]
+    if skip_episodes:
+        cmd += ["--skip-episodes", skip_episodes]
     print(f"[sync-and-render] running: {' '.join(cmd)}")
     subprocess.run(cmd, check=True)
     return render_save_root / env_id / f"level-{dr_level}"
@@ -222,6 +225,20 @@ def main(
     limit: Annotated[int, typer.Option(help="Max sessions to process this run, -1 = all pending.")] = -1,
     keep_local: Annotated[bool, typer.Option(help="Don't delete staged raw/rendered dirs after upload.")] = False,
     dry_run: Annotated[bool, typer.Option(help="List pending sessions and exit, no download/render/upload.")] = False,
+    only_session_prefix: Annotated[str, typer.Option(
+        help="Restrict this run to a single pending session_prefix (as printed "
+             "by --dry-run, e.g. 'raw/Jose_Gabriel/20260811_104910__...'). Use "
+             "together with --skip-episodes to recover one session whose render "
+             "crashed on a specific episode, without touching other pending "
+             "sessions."
+    )] = "",
+    skip_episodes: Annotated[str, typer.Option(
+        help="Passed through to render-decoupled-wbc's --skip-episodes for the "
+             "session being rendered this run (comma-separated indices/ranges, "
+             "e.g. '15'). Episode indices are per-session, so this should only "
+             "be used together with --only-session-prefix -- otherwise it would "
+             "be misapplied to every session processed in a multi-session run."
+    )] = "",
 ):
     """Sync pending raw sessions from the raw HF repo, re-render them with Isaac
     Sim, and upload the result to the rendered HF repo. Safe to re-run: already
@@ -233,6 +250,12 @@ def main(
     if not skip_psi0 and not psi0_repo_id:
         raise typer.BadParameter(
             "No psi0 repo id given. Pass --psi0-repo-id, set HF_REPO_PSI0 in your .env, or pass --skip-psi0."
+        )
+    if skip_episodes and not only_session_prefix:
+        raise typer.BadParameter(
+            "--skip-episodes requires --only-session-prefix, since episode "
+            "indices are per-session -- without it, the skip would be "
+            "misapplied to every session processed this run."
         )
     token = _hf_token()
     if not token:
@@ -251,6 +274,13 @@ def main(
     if dry_run:
         return
 
+    if only_session_prefix:
+        pending = [s for s in pending if s == only_session_prefix]
+        if not pending:
+            raise typer.BadParameter(
+                f"--only-session-prefix {only_session_prefix!r} did not match any pending session."
+            )
+
     if limit >= 0:
         pending = pending[:limit]
 
@@ -266,7 +296,7 @@ def main(
         render_save_root = render_save_dir / raw_metadata["operator"] / raw_metadata["session_timestamp"]
         rendered_dir = _run_render(
             raw_metadata["env_id"], staged_dir, render_save_root, sim_mode, headless, raw_metadata["dr_level"],
-            isaac_background_usd,
+            isaac_background_usd, skip_episodes,
         )
 
         info_path = rendered_dir / "meta" / "info.json"

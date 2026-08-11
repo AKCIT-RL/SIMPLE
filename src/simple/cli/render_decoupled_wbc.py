@@ -173,6 +173,26 @@ def _save_replay_episode_env_config(exporter, env_conf: dict, episode_index: int
         for entry in lines:
             f.write(json.dumps(entry) + "\n")
 
+def _parse_episode_indices(spec: str) -> set[int]:
+    """Parse a comma-separated list of episode indices and/or ranges (e.g.
+    "15" or "15,20-22") into a set of ints. Empty string -> empty set."""
+    indices: set[int] = set()
+    spec = spec.strip()
+    if not spec:
+        return indices
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            start_s, end_s = part.split("-", 1)
+            start, end = int(start_s), int(end_s)
+            indices.update(range(start, end + 1))
+        else:
+            indices.add(int(part))
+    return indices
+
+
 def _load_episode_tasks(data_dir: str):
     """Load task name per episode from meta/tasks.jsonl."""                                                                                                                        
     tasks = {}                                                                                                 
@@ -193,6 +213,14 @@ def main(
     record: Annotated[bool, typer.Option()] = False,
     save_dir: Annotated[str, typer.Option()] = "data/render_decoupled_wbc",
     dr_level: Annotated[int, typer.Option()] = 0,
+    skip_episodes: Annotated[str, typer.Option(
+        help="Comma-separated source episode indices (and/or ranges, e.g. "
+             "'15' or '15,20-22') to exclude from the replay -- for episodes "
+             "that crash the sim (e.g. MuJoCo arena-memory segfaults) and "
+             "need to be dropped to render the rest of the session. Output "
+             "episodes are renumbered contiguously regardless of which "
+             "source indices were skipped."
+    )] = "",
     isaac_background_usd: Annotated[
         str | None, typer.Option(help=(
             "USD path/URL referenced as a purely visual Isaac Sim backdrop "
@@ -226,7 +254,10 @@ def main(
     if num_episodes < 0:
         num_episodes = total_episodes
     num_episodes = min(num_episodes, total_episodes)
-    print(f"Loaded {total_episodes} episodes, will replay {num_episodes}")
+    skip_episode_indices = _parse_episode_indices(skip_episodes)
+    episode_indices = [i for i in range(num_episodes) if i not in skip_episode_indices]
+    print(f"Loaded {total_episodes} episodes, will replay {len(episode_indices)} "
+          f"(of {num_episodes} considered, skipping {sorted(skip_episode_indices & set(range(num_episodes)))})")
 
     # Load per-episode environment configs (object identities, poses, scene, etc.)
     episode_configs = _load_episode_configs(data_dir)
@@ -291,7 +322,7 @@ def main(
     # print(f"Loaded replay results for {len(replay_results)} episodes")
 
     try:
-        for ep_idx in tqdm(range(num_episodes), desc="Episodes", unit="episode"):
+        for ep_idx in tqdm(episode_indices, desc="Episodes", unit="episode"):
             # if ep_idx not in episodes or not replay_results[ep_idx]:
             #     print(f"Episode {ep_idx} not found or failed, skipping")
             #     continue
@@ -394,7 +425,7 @@ def main(
 
             print(f"[Replay] Episode {ep_idx} done")
 
-        print(f"\n[Replay] All {num_episodes} episodes replayed")
+        print(f"\n[Replay] All {len(episode_indices)} episodes replayed")
     except Exception as e:
         print(f"[Replay] Error: {e}")
         raise
