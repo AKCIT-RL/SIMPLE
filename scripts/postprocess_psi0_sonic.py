@@ -327,7 +327,17 @@ def main():
                 print(f"Reached total_episodes={args.total_episodes}, stopping further processing.")
                 break
 
-            ep_index = int(data_path.stem.split("_")[-1]) 
+            ep_index = int(data_path.stem.split("_")[-1])
+
+            episode_meta = episodes_info[ep_index] if ep_index < len(episodes_info) else {}
+            if not episode_meta.get("environment_config"):
+                print(
+                    f"WARNING: skipping {data_path} -- no environment_config in "
+                    f"{sim_root}/meta/episodes.jsonl for episode_index={ep_index} "
+                    "(likely an interrupted capture upstream)"
+                )
+                continue
+
             chunk_id = episode_idx // args.chunks_size
 
             table = pq.read_table(data_path)
@@ -427,7 +437,7 @@ def main():
                 "dataset_to_index": total_frames - 1,
                 "robot_type": "g1",
                 "instruction": all_tasks[task_index[0]],
-                "environment_config": episodes_info[ep_index]["environment_config"]
+                "environment_config": episode_meta["environment_config"]
             })
 
             ep_stats = {
