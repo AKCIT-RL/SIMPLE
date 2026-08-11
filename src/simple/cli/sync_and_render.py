@@ -106,7 +106,7 @@ def _stage_session(api, raw_repo_id: str, session_prefix: str, local_stage_dir: 
     return staged_dir, metadata
 
 
-def _run_render(
+def _render_cmd(
     env_id: str,
     staged_dir: Path,
     render_save_root: Path,
@@ -114,8 +114,9 @@ def _run_render(
     headless: bool,
     dr_level: int,
     isaac_background_usd: str | None,
+    num_episodes: int | None = None,
     skip_episodes: str = "",
-):
+) -> list[str]:
     cmd = [
         "render-decoupled-wbc", env_id,
         "--data-dir", str(staged_dir),
@@ -127,11 +128,126 @@ def _run_render(
     ]
     if isaac_background_usd:
         cmd += ["--isaac-background-usd", isaac_background_usd]
+    if num_episodes is not None:
+        cmd += ["--num-episodes", str(num_episodes)]
     if skip_episodes:
         cmd += ["--skip-episodes", skip_episodes]
+    return cmd
+
+
+def _run_render(
+    env_id: str,
+    staged_dir: Path,
+    render_save_root: Path,
+    sim_mode: str,
+    headless: bool,
+    dr_level: int,
+    isaac_background_usd: str | None,
+    skip_episodes: str = "",
+):
+    cmd = _render_cmd(
+        env_id, staged_dir, render_save_root, sim_mode, headless, dr_level,
+        isaac_background_usd, skip_episodes=skip_episodes,
+    )
     print(f"[sync-and-render] running: {' '.join(cmd)}")
     subprocess.run(cmd, check=True)
     return render_save_root / env_id / f"level-{dr_level}"
+
+
+def _total_episodes(info_json_path: Path) -> int:
+    """Read total_episodes from a LeRobot meta/info.json, 0 if it doesn't exist yet."""
+    if not info_json_path.exists():
+        return 0
+    with open(info_json_path, "r") as f:
+        return json.load(f).get("total_episodes", 0)
+
+
+def _run_render_chunked(
+    env_id: str,
+    staged_dir: Path,
+    render_save_root: Path,
+    sim_mode: str,
+    headless: bool,
+    dr_level: int,
+    isaac_background_usd: str | None,
+    chunk_size: int,
+    max_crash_retries: int,
+):
+    """Replay episodes in fresh-process chunks of up to `chunk_size`, so a
+    per-episode crash (e.g. a MuJoCo arena-memory segfault, which kills the
+    whole process and can't be caught in-process -- see module docstring on
+    why render-decoupled-wbc must run as a subprocess at all) only loses
+    progress within its own chunk, not the whole session.
+
+    Each chunk resumes into the same render_save_root (Gr00tDataExporter
+    appends to an existing dataset dir). If a chunk's subprocess crashes, the
+    exact source episode that caused it is inferred from how many episodes
+    were actually appended before the crash, permanently skipped, and the
+    rest of the session continues from there.
+    """
+    source_info = staged_dir / "meta" / "info.json"
+    total_source_episodes = _total_episodes(source_info)
+
+    out_dir = render_save_root / env_id / f"level-{dr_level}"
+    out_info = out_dir / "meta" / "info.json"
+
+    permanent_skip: set[int] = set()
+    next_idx = _total_episodes(out_info)  # resuming a previous partial run
+    crash_retries = 0
+
+    while next_idx < total_source_episodes:
+        candidates = [
+            i for i in range(next_idx, total_source_episodes) if i not in permanent_skip
+        ][:chunk_size]
+        if not candidates:
+            next_idx = total_source_episodes  # nothing left to attempt
+            break
+
+        already_done = set(range(next_idx)) | permanent_skip
+        skip_arg = ",".join(str(i) for i in sorted(already_done))
+
+        cmd = _render_cmd(
+            env_id, staged_dir, render_save_root, sim_mode, headless, dr_level,
+            isaac_background_usd, num_episodes=candidates[-1] + 1, skip_episodes=skip_arg,
+        )
+        print(f"[sync-and-render] chunk starting at source episode {next_idx} "
+              f"({len(candidates)} episodes, permanently skipping {sorted(permanent_skip)}): "
+              f"{' '.join(cmd)}")
+
+        before = _total_episodes(out_info)
+        result = subprocess.run(cmd)
+        after = _total_episodes(out_info)
+        saved_this_chunk = after - before
+
+        if result.returncode == 0:
+            next_idx = candidates[-1] + 1
+            continue
+
+        if saved_this_chunk < len(candidates):
+            crashed_idx = candidates[saved_this_chunk]
+            print(f"[sync-and-render] chunk crashed (exit {result.returncode}) after saving "
+                  f"{saved_this_chunk}/{len(candidates)} -- source episode {crashed_idx} is "
+                  f"the culprit, skipping it permanently and retrying.")
+            permanent_skip.add(crashed_idx)
+            next_idx = crashed_idx + 1
+        else:
+            # Crashed after apparently saving everything it was asked to --
+            # e.g. died during teardown. Don't spin on the same chunk forever.
+            print(f"[sync-and-render] chunk crashed (exit {result.returncode}) but all "
+                  f"{len(candidates)} episodes were saved first; treating the chunk as done.")
+            next_idx = candidates[-1] + 1
+
+        crash_retries += 1
+        if crash_retries > max_crash_retries:
+            raise RuntimeError(
+                f"[sync-and-render] Exceeded --max-crash-retries ({max_crash_retries}) "
+                f"rendering {staged_dir}. Permanently skipped so far: {sorted(permanent_skip)}. "
+                "Investigate before continuing (see docs/... or ask for a debug pass)."
+            )
+
+    if permanent_skip:
+        print(f"[sync-and-render] Done. Permanently skipped source episodes: {sorted(permanent_skip)}")
+    return out_dir
 
 
 def _download_all_rendered_sessions(rendered_repo_id: str, mirror_dir: Path) -> Path:
@@ -237,8 +353,24 @@ def main(
              "session being rendered this run (comma-separated indices/ranges, "
              "e.g. '15'). Episode indices are per-session, so this should only "
              "be used together with --only-session-prefix -- otherwise it would "
-             "be misapplied to every session processed in a multi-session run."
+             "be misapplied to every session processed in a multi-session run. "
+             "Ignored if --episode-chunk-size is set."
     )] = "",
+    episode_chunk_size: Annotated[int, typer.Option(
+        help="If >0, render each session in fresh-process chunks of up to this "
+             "many episodes instead of one subprocess for the whole session. "
+             "Isaac Sim's SimulationApp can't loop in-process, so a crashing "
+             "episode (e.g. a MuJoCo arena-memory segfault) kills the whole "
+             "subprocess -- chunking bounds the damage to one chunk, and any "
+             "chunk that crashes is automatically retried with the exact "
+             "culprit episode permanently skipped. Safe to leave on for every "
+             "run (unlike --skip-episodes, this isn't session-specific). "
+             "Recommended: comfortably below your observed crash frequency, "
+             "e.g. 10."
+    )] = 0,
+    max_crash_retries: Annotated[int, typer.Option(
+        help="Max crash-and-skip retries per session before giving up. Only used with --episode-chunk-size."
+    )] = 5,
 ):
     """Sync pending raw sessions from the raw HF repo, re-render them with Isaac
     Sim, and upload the result to the rendered HF repo. Safe to re-run: already
@@ -294,10 +426,16 @@ def main(
         # Unique --save-dir per session so concurrent env_id/level combos across
         # sessions don't append into the same Gr00tDataExporter root.
         render_save_root = render_save_dir / raw_metadata["operator"] / raw_metadata["session_timestamp"]
-        rendered_dir = _run_render(
-            raw_metadata["env_id"], staged_dir, render_save_root, sim_mode, headless, raw_metadata["dr_level"],
-            isaac_background_usd, skip_episodes,
-        )
+        if episode_chunk_size > 0:
+            rendered_dir = _run_render_chunked(
+                raw_metadata["env_id"], staged_dir, render_save_root, sim_mode, headless, raw_metadata["dr_level"],
+                isaac_background_usd, episode_chunk_size, max_crash_retries,
+            )
+        else:
+            rendered_dir = _run_render(
+                raw_metadata["env_id"], staged_dir, render_save_root, sim_mode, headless, raw_metadata["dr_level"],
+                isaac_background_usd, skip_episodes,
+            )
 
         info_path = rendered_dir / "meta" / "info.json"
         with open(info_path, "r") as f:
