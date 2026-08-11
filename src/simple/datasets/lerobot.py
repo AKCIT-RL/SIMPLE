@@ -18,7 +18,8 @@ def get_episode_lerobot(dataset, eps_idx, data_format=None):
     episode = [dataset[i] for i in range(from_idx, to_idx)]
 
     env_conf = json.loads(dataset.meta.episodes[eps_idx]['environment_config'])
-    env_conf["dr_state_dict"]["scene"]["uid"] = env_conf["dr_state_dict"]["scene"]["uid"].replace("102344280", "scene3") # FIXME
+    if "scene" in env_conf.get("dr_state_dict", {}):  # FIXME
+        env_conf["dr_state_dict"]["scene"]["uid"] = env_conf["dr_state_dict"]["scene"]["uid"].replace("102344280", "scene3")
     # import pickle; pickle.dump(env_conf, open(f"env_conf_{eps_idx}.pkl", "wb"))
     # import pickle; env_conf = pickle.loads(open(f"env_conf_{eps_idx}.pkl", "rb").read())
     return env_conf, episode

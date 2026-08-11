@@ -23,7 +23,6 @@ from simple.core.actor import Actor
 from simple.core.layout import Layout
 from simple.core.scene import Scene
 from simple.core.task import Task
-from simple.core.types import Pose
 from simple.dr import *
 from simple.dr.manager import TabletopGraspDRManager
 from simple.dr.shelf_group import SHELF_SPECS, TOTE_ASSET_POSE_DELTA, retarget_tote_pose
@@ -48,14 +47,10 @@ _TABLE_SIZE = (1.2, 0.8, 0.1)  # not yet confirmed against real reach requiremen
 # [-3.8153,-1.9961], see SHELF_SPECS); y=0.5 sits ~1m back from the shelf
 # front (l1/l3 structure starts at y=1.523, measured from the corridor0
 # collision mesh), further than the aisle midline used to be, at the
-# user's request. Quaternion is _yaw_quat(90deg) in shelf_group.py's
-# convention -- confirmed correct by a real render (the robot's own body
-# orientation faces l1/l3 as intended); a same-session +90/-90 back-and-forth
-# over a misread symptom is not repeated here, see git history if curious.
-# The bug that render actually surfaced was about which shelf appears in
-# front, not the robot's own orientation -- being investigated separately.
+# user's request. Keep the same shelf-facing yaw as the original task, but
+# apply it through SpatialDR so reset does not perform a later pose override.
 _ROBOT_SPAWN_POSITION = [-1.996, 0.5, 0.0]
-_ROBOT_SPAWN_QUATERNION = [0.7071068, 0.0, 0.0, 0.7071068]  # yaw 90 deg, facing l1/l3 -- confirmed correct
+_ROBOT_SPAWN_QUATERNION = [0.7071068, 0.0, 0.0, 0.7071068]  # yaw 90 deg, facing l1/l3
 
 # r1/r2/r3 (the estantes that used to hold totes on the aisle's other side)
 # are no longer spawn targets -- replaced by plain gray box primitives of
@@ -94,6 +89,7 @@ _TARGET_TOTE_RGBA = [0.1, 0.3, 0.95, 1.0]  # blue
 # this is vestigial (every live tote already qualifies) but kept as "D"
 # rather than removed, in case a future layout reintroduces lower tiers.
 _MAX_TARGET_TIER_LETTER = "D"
+_LEGACY_TASK_UID = "g1_wholebody_locomotion_pick_totes_shelf_to_table_teleop"
 
 
 @TaskRegistry.register("g1_wholebody_locomotion_pick_totes_shelf_to_table_teleop")
@@ -115,6 +111,7 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
         "image_dt": 0.033333,
         "need_gravity": True,
         "max_episode_steps": 1200,
+        "isaac_background_usd": "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/4.5/Isaac/Environments/Simple_Warehouse/warehouse.usd",
     }
 
     robot_cfg: dict[str, Any] = dict(
@@ -155,6 +152,16 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
         shelf_group=ShelfGroupDRCfg(
             asset_id="totes:bin_b04",
             shelves=["l1", "l3"],
+        ),
+        # Use fixed SpatialDR spawn for robot pose so reset does not need a
+        # manual post-super().reset() robot pose override.
+        spatial=SpatialDRCfg(
+            spatial_mode="fixed",
+            robot_region=Box(low=_ROBOT_SPAWN_POSITION, high=_ROBOT_SPAWN_POSITION),
+            robot_orientation_region=Box(
+                low=_ROBOT_SPAWN_QUATERNION,
+                high=_ROBOT_SPAWN_QUATERNION,
+            ),
         ),
         # CameraDR.__call__ is a no-op passthrough (verified by reading) --
         # this key only exists to gate Task.reset()'s camera-registration
@@ -271,13 +278,17 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
     def reset(
         self, seed: int | None = None, options: Optional[dict[str, Any]] = None
     ) -> None:
+        # Backward-compat: allow replaying legacy captures that were saved
+        # before this teleop task uid existed.
+        loaded_state = (options or {}).get("state_dict")
+        if isinstance(loaded_state, dict) and loaded_state.get("uid") == _LEGACY_TASK_UID:
+            options = dict(options or {})
+            patched_state = dict(loaded_state)
+            patched_state["uid"] = self.uid
+            options["state_dict"] = patched_state
+
         super().reset(seed, options)
         split = self.metadata.get("split", "train")
-
-        self._layout.actors["robot"].pose = Pose(
-            position=list(_ROBOT_SPAWN_POSITION),
-            quaternion=list(_ROBOT_SPAWN_QUATERNION),
-        )
 
         # Static shelf fixture -- world-frame-baked collision/visual meshes,
         # identity pose (see migration plan doc, Phase 2).

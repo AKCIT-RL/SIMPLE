@@ -22,6 +22,7 @@ class EvalConfig:
     success_criteria: float = 0.9
     save_video: bool = True
     num_workers: int = 1
+    isaac_background_usd: str | None = None
 
 
 @dataclass

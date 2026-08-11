@@ -103,11 +103,12 @@ class SpatialDR(Randomizer):
 
         # Determine surface heights for different regions
         surface_heights = {"default": table_height}
-        if hasattr(layout.scene, "table") and layout.scene.table is not None:
-            surface_heights["table"] = layout.scene.table.pose.position[2] + 0.5 * layout.scene.table.size[2]
-        
-        if hasattr(layout.scene, "table2") and layout.scene.table2 is not None:
-            surface_heights["table2"] = layout.scene.table2.pose.position[2] + 0.5 * layout.scene.table2.size[2]
+        scene = getattr(layout, "scene", None)
+        if scene is not None and hasattr(scene, "table") and scene.table is not None:
+            surface_heights["table"] = scene.table.pose.position[2] + 0.5 * scene.table.size[2]
+
+        if scene is not None and hasattr(scene, "table2") and scene.table2 is not None:
+            surface_heights["table2"] = scene.table2.pose.position[2] + 0.5 * scene.table2.size[2]
 
         distractor_count = 0
         for objtype, obj in layout.actors.items():

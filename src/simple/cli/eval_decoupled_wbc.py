@@ -405,6 +405,10 @@ def run_eval(
     success_criteria = config.success_criteria
     save_video = config.save_video
     num_workers = config.num_workers
+    isaac_background_usd = config.isaac_background_usd
+    
+    if isaac_background_usd:
+        os.environ["SIMPLE_ISAAC_BACKGROUND_USD"] = isaac_background_usd
 
     eval_dir_path = Path(config.eval_dir)
     eval_dir_path.mkdir(parents=True, exist_ok=True)
@@ -652,7 +656,19 @@ def main(
     success_criteria: Annotated[float, typer.Option()] = 0.7,
     save_video: Annotated[bool, typer.Option("--save-video/--no-save-video")] = True,
     num_workers: Annotated[int, typer.Option()] = 1,
+    isaac_background_usd: Annotated[
+        str | None, typer.Option(help=(
+            "USD path/URL referenced as a purely visual Isaac Sim backdrop "
+            "(e.g. the SimReady Warehouse environment), for tasks that build "
+            "their own scenario geometry instead of layout.scene. Accepts a "
+            "local absolute path or an omniverse:// Nucleus URL. No effect "
+            "in mujoco-only sim modes."
+        ))
+    ] = None,
 ):
+    if isaac_background_usd:
+        os.environ["SIMPLE_ISAAC_BACKGROUND_USD"] = isaac_background_usd
+
     run_eval(
         EvalConfig(
             env_id=env_id,
@@ -671,6 +687,7 @@ def main(
             success_criteria=success_criteria,
             save_video=save_video,
             num_workers=num_workers,
+            isaac_background_usd=isaac_background_usd,
         )
     )
 

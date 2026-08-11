@@ -136,7 +136,7 @@
           The detected CUDA version (11.8) mismatches the version that was used to compile
           PyTorch (12.8). Please make sure to use the same CUDA versions.
 
-    **Solution** Install [`cuda`](https://developer.nvidia.com/cuda-12-8-0-download-archive) verison 12.8.
+    **Solution** Install [`cuda`](https://developer.nvidia.com/cuda-12-8-0-download-archive) version 12.8 or newer, then point `CUDA_HOME` at that toolkit before rerunning CuRobo.
     ```
     wget https://developer.download.nvidia.com/compute/cuda/12.8.0/local_installers/cuda_12.8.0_570.86.10_linux.run
     sudo sh cuda_12.8.0_570.86.10_linux.run
