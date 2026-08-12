@@ -67,7 +67,13 @@ def get_episode_lerobot(dataset, eps_idx, data_format=None):
     episode = LazyEpisode(dataset, from_idx, to_idx)
 
     env_conf = json.loads(dataset.meta.episodes[eps_idx]['environment_config'])
-    env_conf["dr_state_dict"]["scene"]["uid"] = env_conf["dr_state_dict"]["scene"]["uid"].replace("102344280", "scene3") # FIXME
+    # FIXME: household (hssd-scene) tasks record a raw collection-time scene id and this
+    # remaps it to the fixed scene available in eval. Tasks with a different DR family
+    # (e.g. shelf_group-based warehouse tasks) have no "scene" entry in dr_state_dict at
+    # all, so this must be a no-op for them rather than a KeyError.
+    scene_cfg = env_conf.get("dr_state_dict", {}).get("scene")
+    if scene_cfg is not None and "uid" in scene_cfg:
+        scene_cfg["uid"] = scene_cfg["uid"].replace("102344280", "scene3")
     # import pickle; pickle.dump(env_conf, open(f"env_conf_{eps_idx}.pkl", "wb"))
     # import pickle; env_conf = pickle.loads(open(f"env_conf_{eps_idx}.pkl", "rb").read())
     return env_conf, episode

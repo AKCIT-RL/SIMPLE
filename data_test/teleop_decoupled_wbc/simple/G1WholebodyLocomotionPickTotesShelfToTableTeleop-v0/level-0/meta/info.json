@@ -1,0 +1,307 @@
+{
+    "codebase_version": "v2.1",
+    "robot_type": null,
+    "total_episodes": 1,
+    "total_frames": 1248,
+    "total_tasks": 1,
+    "total_videos": 1,
+    "total_chunks": 1,
+    "chunks_size": 1000,
+    "fps": 50,
+    "splits": {
+        "train": "0:1"
+    },
+    "data_path": "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet",
+    "video_path": "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4",
+    "features": {
+        "observation.images.ego_view": {
+            "dtype": "video",
+            "shape": [
+                360,
+                640,
+                3
+            ],
+            "names": [
+                "height",
+                "width",
+                "channel"
+            ]
+        },
+        "observation.state": {
+            "dtype": "float64",
+            "shape": [
+                43
+            ],
+            "names": [
+                "left_hip_pitch_joint",
+                "left_hip_roll_joint",
+                "left_hip_yaw_joint",
+                "left_knee_joint",
+                "left_ankle_pitch_joint",
+                "left_ankle_roll_joint",
+                "right_hip_pitch_joint",
+                "right_hip_roll_joint",
+                "right_hip_yaw_joint",
+                "right_knee_joint",
+                "right_ankle_pitch_joint",
+                "right_ankle_roll_joint",
+                "waist_yaw_joint",
+                "waist_roll_joint",
+                "waist_pitch_joint",
+                "left_shoulder_pitch_joint",
+                "left_shoulder_roll_joint",
+                "left_shoulder_yaw_joint",
+                "left_elbow_joint",
+                "left_wrist_roll_joint",
+                "left_wrist_pitch_joint",
+                "left_wrist_yaw_joint",
+                "right_shoulder_pitch_joint",
+                "right_shoulder_roll_joint",
+                "right_shoulder_yaw_joint",
+                "right_elbow_joint",
+                "right_wrist_roll_joint",
+                "right_wrist_pitch_joint",
+                "right_wrist_yaw_joint",
+                "left_hand_thumb_0_joint",
+                "left_hand_thumb_1_joint",
+                "left_hand_thumb_2_joint",
+                "left_hand_index_0_joint",
+                "left_hand_index_1_joint",
+                "left_hand_middle_0_joint",
+                "left_hand_middle_1_joint",
+                "right_hand_thumb_0_joint",
+                "right_hand_thumb_1_joint",
+                "right_hand_thumb_2_joint",
+                "right_hand_index_0_joint",
+                "right_hand_index_1_joint",
+                "right_hand_middle_0_joint",
+                "right_hand_middle_1_joint"
+            ]
+        },
+        "observation.eef_state": {
+            "dtype": "float64",
+            "shape": [
+                14
+            ],
+            "names": [
+                "left_wrist_pos",
+                "left_wrist_abs_quat",
+                "right_wrist_pos",
+                "right_wrist_abs_quat"
+            ]
+        },
+        "action": {
+            "dtype": "float64",
+            "shape": [
+                43
+            ],
+            "names": [
+                "left_hip_pitch_joint",
+                "left_hip_roll_joint",
+                "left_hip_yaw_joint",
+                "left_knee_joint",
+                "left_ankle_pitch_joint",
+                "left_ankle_roll_joint",
+                "right_hip_pitch_joint",
+                "right_hip_roll_joint",
+                "right_hip_yaw_joint",
+                "right_knee_joint",
+                "right_ankle_pitch_joint",
+                "right_ankle_roll_joint",
+                "waist_yaw_joint",
+                "waist_roll_joint",
+                "waist_pitch_joint",
+                "left_shoulder_pitch_joint",
+                "left_shoulder_roll_joint",
+                "left_shoulder_yaw_joint",
+                "left_elbow_joint",
+                "left_wrist_roll_joint",
+                "left_wrist_pitch_joint",
+                "left_wrist_yaw_joint",
+                "left_hand_index_0_joint",
+                "left_hand_index_1_joint",
+                "left_hand_middle_0_joint",
+                "left_hand_middle_1_joint",
+                "left_hand_thumb_0_joint",
+                "left_hand_thumb_1_joint",
+                "left_hand_thumb_2_joint",
+                "right_shoulder_pitch_joint",
+                "right_shoulder_roll_joint",
+                "right_shoulder_yaw_joint",
+                "right_elbow_joint",
+                "right_wrist_roll_joint",
+                "right_wrist_pitch_joint",
+                "right_wrist_yaw_joint",
+                "right_hand_index_0_joint",
+                "right_hand_index_1_joint",
+                "right_hand_middle_0_joint",
+                "right_hand_middle_1_joint",
+                "right_hand_thumb_0_joint",
+                "right_hand_thumb_1_joint",
+                "right_hand_thumb_2_joint"
+            ]
+        },
+        "action.eef": {
+            "dtype": "float64",
+            "shape": [
+                14
+            ],
+            "names": [
+                "left_wrist_pos",
+                "left_wrist_abs_quat",
+                "right_wrist_pos",
+                "right_wrist_abs_quat"
+            ]
+        },
+        "observation.img_state_delta": {
+            "dtype": "float32",
+            "shape": [
+                1
+            ],
+            "names": "img_state_delta"
+        },
+        "teleop.navigate_command": {
+            "dtype": "float64",
+            "shape": [
+                4
+            ],
+            "names": [
+                "lin_vel_x",
+                "lin_vel_y",
+                "ang_vel_z",
+                "target_yaw"
+            ]
+        },
+        "teleop.base_height_command": {
+            "dtype": "float64",
+            "shape": [
+                1
+            ],
+            "names": "base_height_command"
+        },
+        "observation.base_pose": {
+            "dtype": "float64",
+            "shape": [
+                7
+            ],
+            "names": [
+                "pos_x",
+                "pos_y",
+                "pos_z",
+                "quat_w",
+                "quat_x",
+                "quat_y",
+                "quat_z"
+            ]
+        },
+        "observation.base_vel": {
+            "dtype": "float64",
+            "shape": [
+                6
+            ],
+            "names": [
+                "lin_vel_x",
+                "lin_vel_y",
+                "lin_vel_z",
+                "ang_vel_x",
+                "ang_vel_y",
+                "ang_vel_z"
+            ]
+        },
+        "observation.object_poses": {
+            "dtype": "float64",
+            "shape": [
+                42
+            ],
+            "names": [
+                "target_0.pos_x",
+                "target_0.pos_y",
+                "target_0.pos_z",
+                "target_0.quat_w",
+                "target_0.quat_x",
+                "target_0.quat_y",
+                "target_0.quat_z",
+                "target_1.pos_x",
+                "target_1.pos_y",
+                "target_1.pos_z",
+                "target_1.quat_w",
+                "target_1.quat_x",
+                "target_1.quat_y",
+                "target_1.quat_z",
+                "target_2.pos_x",
+                "target_2.pos_y",
+                "target_2.pos_z",
+                "target_2.quat_w",
+                "target_2.quat_x",
+                "target_2.quat_y",
+                "target_2.quat_z",
+                "target_3.pos_x",
+                "target_3.pos_y",
+                "target_3.pos_z",
+                "target_3.quat_w",
+                "target_3.quat_x",
+                "target_3.quat_y",
+                "target_3.quat_z",
+                "target_4.pos_x",
+                "target_4.pos_y",
+                "target_4.pos_z",
+                "target_4.quat_w",
+                "target_4.quat_x",
+                "target_4.quat_y",
+                "target_4.quat_z",
+                "target_5.pos_x",
+                "target_5.pos_y",
+                "target_5.pos_z",
+                "target_5.quat_w",
+                "target_5.quat_x",
+                "target_5.quat_y",
+                "target_5.quat_z"
+            ]
+        },
+        "timestamp": {
+            "dtype": "float32",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "frame_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "episode_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "task_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        }
+    },
+    "script_config": {},
+    "discarded_episode_indices": [],
+    "data_collection_info": {
+        "lower_body_policy": null,
+        "wbc_model_path": null,
+        "teleoperator_username": null,
+        "support_operator_username": null,
+        "robot_type": null,
+        "robot_id": null
+    }
+}

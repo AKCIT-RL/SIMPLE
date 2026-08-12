@@ -15,3 +15,4 @@ from .primitive import PrimitiveAsseManager, Primitive, Box
 from .articulate import ArticulatedAssetManager
 from .totes import TotesAssetManager
 from .industrial_parts import IndustrialPartsAssetManager
+from .fixtures import FixturesAssetManager
