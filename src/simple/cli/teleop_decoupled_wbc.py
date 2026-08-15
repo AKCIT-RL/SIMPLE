@@ -262,6 +262,8 @@ def main(
     record: Annotated[bool, typer.Option()] = False,
     operator: Annotated[str, typer.Option(envvar="SIMPLE_OPERATOR")] = os.getenv("USER", "unknown"),
     industrial_material: Annotated[bool, typer.Option()] = False,
+    pick_hand: Annotated[str, typer.Option(help="left|right|both|random — pins the pick hand for tasks that support it (e.g. the mirror-table task); ignored elsewhere")] = "random",
+    target_side: Annotated[str, typer.Option(help="left|right|random — pins the delivery table side for tasks that support it; ignored elsewhere")] = "random",
 ):
     assert sim_mode in ["mujoco"], f"Invalid sim_mode {sim_mode} for teleop."
     sim_cnt = 0
@@ -280,6 +282,8 @@ def main(
         target=target,
         dr_level=dr_level,
         industrial_material=industrial_material,
+        pick_hand=pick_hand,
+        target_side=target_side,
     )
     sonic_env: SonicLocoManipEnv = env.unwrapped  # type: ignore
     task = sonic_env.task
@@ -427,6 +431,14 @@ def main(
                     f"{target_counts['shelf']} TOTE AZUL NA ESTANTE",
                     f"{target_counts['table']} TOTE AZUL NA MESA",
                 ]
+
+            # Tasks with a per-episode command the operator must follow (e.g. the
+            # mirror-table task: which hand, which side) provide their own HUD
+            # lines; this overrides the generic tote-count HUD above. No-op for
+            # tasks without it.
+            hud_fn = getattr(task, "teleop_hud_lines", None)
+            if hud_fn is not None:
+                agent.hud_lines = hud_fn(mujoco_env=sonic_env.mujoco)
 
             if agent.reset_requested or tote_fell:
                 # Discard any in-progress recording

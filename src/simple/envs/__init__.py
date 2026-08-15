@@ -424,6 +424,11 @@ register(
     kwargs={"task":"g1_wholebody_locomotion_pick_totes_shelf_to_table_teleop"},
 )
 register(
+    id="simple/G1WholebodyLocomotionPickTotesShelfToTableMirrorTeleop-v0",
+    entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
+    kwargs={"task":"g1_wholebody_locomotion_pick_totes_shelf_to_table_mirror_teleop"},
+)
+register(
     id="simple/G1WholebodyHandoverTeleop-v0",
     entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
     kwargs={"task":"g1_wholebody_handover_teleop"},

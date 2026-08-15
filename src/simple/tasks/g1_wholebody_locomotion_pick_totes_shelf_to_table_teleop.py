@@ -295,21 +295,9 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
         corridor_asset = AssetManager.get("fixtures").load("corridor0")
         self._layout.add_static_object("corridor0", corridor_asset)
 
-        # Destination table -- Phase 3 calibration (end-cap placement beyond
-        # the corridor's open -X end), built the same way TabletopSceneDR
-        # builds `scene.table` (primitive:box, position.z derived from
-        # table_height and half the box thickness).
-        table_position = list(_TABLE_POSITION_XY) + [
-            _TABLE_HEIGHT - 0.5 * _TABLE_SIZE[2]
-        ]
-        table_quaternion = t3d.euler.euler2quat(0, 0, _TABLE_ROTATION_Z).tolist()
-        table_asset = AssetManager.create(
-            "primitive:box",
-            size=list(_TABLE_SIZE),
-            position=table_position,
-            quaternion=table_quaternion,
-        )
-        self._layout.add_primitive("table", table_asset)
+        # Destination table(s) -- see _add_delivery_tables (overridable so a
+        # subclass can place mirrored left/right tables instead of one).
+        self._add_delivery_tables()
 
         # Plain gray stand-ins for the r1/r2/r3 estantes, which no longer
         # spawn totes (see shelf_group's shelves=["l1","l3"] above) -- same
@@ -361,12 +349,35 @@ class G1WholebodyLocomotionPickTotesShelfToTableTaskTeleop(Task):
         target_actor.asset = AssetManager.get("totes").load("toteweg")
         target_actor.rgba = list(_TARGET_TOTE_RGBA)
 
-        lang_dr = self.dr.get_randomizer("language")
-        assert lang_dr is not None
-        self._instruction = lang_dr(split)
+        self._instruction = self._build_instruction(split)
         self._contact_started = False
         self.reward = 0
         self.robot.reset(spawn_pose=self.layout.robot.pose)
+
+    def _add_delivery_tables(self) -> None:
+        """Add the destination table(s). Base task places a single table at the
+        aisle end (Phase 3 calibration), built like TabletopSceneDR's
+        `scene.table` (primitive:box, z from table_height minus half thickness).
+        Overridable -- a subclass can add mirrored left/right tables instead."""
+        table_position = list(_TABLE_POSITION_XY) + [
+            _TABLE_HEIGHT - 0.5 * _TABLE_SIZE[2]
+        ]
+        table_quaternion = t3d.euler.euler2quat(0, 0, _TABLE_ROTATION_Z).tolist()
+        table_asset = AssetManager.create(
+            "primitive:box",
+            size=list(_TABLE_SIZE),
+            position=table_position,
+            quaternion=table_quaternion,
+        )
+        self._layout.add_primitive("table", table_asset)
+
+    def _build_instruction(self, split: str) -> str:
+        """Return this episode's language instruction. Base task uses the fixed
+        LanguageDRCfg template as-is; subclasses may format per-episode slots
+        (e.g. commanded hand / table side)."""
+        lang_dr = self.dr.get_randomizer("language")
+        assert lang_dr is not None
+        return lang_dr(split)
 
     def state_dict(self) -> Dict[str, Any]:
         state_dict = super().state_dict()
