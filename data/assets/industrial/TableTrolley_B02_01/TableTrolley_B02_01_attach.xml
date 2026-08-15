@@ -1,0 +1,75 @@
+<mujoco model="TableTrolley_B02_01">
+  <compiler meshdir="." angle="radian"/>
+  <asset>
+  <mesh name="TableTrolley_B02_01_vis" file="visuals/TableTrolley_B02_01.obj"/>
+  <mesh name="TableTrolley_B02_01_col_0" file="collision/TableTrolley_B02_01_col_0.obj"/>
+  <mesh name="TableTrolley_B02_01_col_1" file="collision/TableTrolley_B02_01_col_1.obj"/>
+  <mesh name="TableTrolley_B02_01_col_2" file="collision/TableTrolley_B02_01_col_2.obj"/>
+  <mesh name="TableTrolley_B02_01_col_3" file="collision/TableTrolley_B02_01_col_3.obj"/>
+  <mesh name="TableTrolley_B02_01_col_4" file="collision/TableTrolley_B02_01_col_4.obj"/>
+  <mesh name="TableTrolley_B02_01_col_5" file="collision/TableTrolley_B02_01_col_5.obj"/>
+  <mesh name="TableTrolley_B02_01_col_6" file="collision/TableTrolley_B02_01_col_6.obj"/>
+  <mesh name="TableTrolley_B02_01_col_7" file="collision/TableTrolley_B02_01_col_7.obj"/>
+  <mesh name="TableTrolley_B02_01_col_8" file="collision/TableTrolley_B02_01_col_8.obj"/>
+  <mesh name="TableTrolley_B02_01_col_9" file="collision/TableTrolley_B02_01_col_9.obj"/>
+  <mesh name="TableTrolley_B02_01_col_10" file="collision/TableTrolley_B02_01_col_10.obj"/>
+  <mesh name="TableTrolley_B02_01_col_11" file="collision/TableTrolley_B02_01_col_11.obj"/>
+  <mesh name="TableTrolley_B02_01_col_12" file="collision/TableTrolley_B02_01_col_12.obj"/>
+  <mesh name="TableTrolley_B02_01_col_13" file="collision/TableTrolley_B02_01_col_13.obj"/>
+  <mesh name="TableTrolley_B02_01_col_14" file="collision/TableTrolley_B02_01_col_14.obj"/>
+  <mesh name="TableTrolley_B02_01_col_15" file="collision/TableTrolley_B02_01_col_15.obj"/>
+  <mesh name="TableTrolley_B02_01_col_16" file="collision/TableTrolley_B02_01_col_16.obj"/>
+  <mesh name="TableTrolley_B02_01_col_17" file="collision/TableTrolley_B02_01_col_17.obj"/>
+  <mesh name="TableTrolley_B02_01_col_18" file="collision/TableTrolley_B02_01_col_18.obj"/>
+  <mesh name="TableTrolley_B02_01_col_19" file="collision/TableTrolley_B02_01_col_19.obj"/>
+  <mesh name="TableTrolley_B02_01_col_20" file="collision/TableTrolley_B02_01_col_20.obj"/>
+  <mesh name="TableTrolley_B02_01_col_21" file="collision/TableTrolley_B02_01_col_21.obj"/>
+  <mesh name="TableTrolley_B02_01_col_22" file="collision/TableTrolley_B02_01_col_22.obj"/>
+  <mesh name="TableTrolley_B02_01_col_23" file="collision/TableTrolley_B02_01_col_23.obj"/>
+  <mesh name="TableTrolley_B02_01_col_24" file="collision/TableTrolley_B02_01_col_24.obj"/>
+  <mesh name="TableTrolley_B02_01_col_25" file="collision/TableTrolley_B02_01_col_25.obj"/>
+  <mesh name="TableTrolley_B02_01_col_26" file="collision/TableTrolley_B02_01_col_26.obj"/>
+  <mesh name="TableTrolley_B02_01_col_27" file="collision/TableTrolley_B02_01_col_27.obj"/>
+  <mesh name="TableTrolley_B02_01_col_28" file="collision/TableTrolley_B02_01_col_28.obj"/>
+  <mesh name="TableTrolley_B02_01_col_29" file="collision/TableTrolley_B02_01_col_29.obj"/>
+  <mesh name="TableTrolley_B02_01_col_30" file="collision/TableTrolley_B02_01_col_30.obj"/>
+  <mesh name="TableTrolley_B02_01_col_31" file="collision/TableTrolley_B02_01_col_31.obj"/>
+  </asset>
+  <worldbody>
+    <body name="TableTrolley_B02_01">
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_0" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_1" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_2" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_3" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_4" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_5" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_6" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_7" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_8" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_9" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_10" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_11" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_12" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_13" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_14" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_15" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_16" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_17" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_18" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_19" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_20" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_21" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_22" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_23" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_24" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_25" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_26" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_27" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_28" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_29" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_30" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_col_31" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="TableTrolley_B02_01_vis" group="1" contype="0" conaffinity="0"/>
+    </body>
+  </worldbody>
+</mujoco>

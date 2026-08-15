@@ -102,7 +102,12 @@ class MujocoSimulator(Simulator):
         # joint_state = np.array([joint.qpos[0] for joint in self.joints])
         joint_state = self.task.robot.get_robot_qpos()
         robot_position = np.round(self.mjData.qpos[:7], 4)
-        if self.articulated_object_joints is not None:
+        # Only real articulated objects expose `articulate_*` joints/bodies.
+        # Static furniture also rides the articulated actor path (0 joints), which
+        # leaves this list EMPTY but not None — the old `is not None` check then
+        # fell through to `mjData.body("articulate_base")` and raised
+        # "Invalid name 'articulate_base'". Same guard as _setup_scene.
+        if self.articulated_object_joints:
             articulated_joints_state = {}
             for articulate_joint in self.articulated_object_joints:
                 # articulated_joints_state[articulate_joint] = self.mjData.joint(articulate_joint).qpos[0]
@@ -138,6 +143,13 @@ class MujocoSimulator(Simulator):
         mjSpec.option.integrator = mujoco.mjtIntegrator.mjINT_IMPLICITFAST
         mjSpec.option.cone = mujoco.mjtCone.mjCONE_ELLIPTIC
         mjSpec.option.noslip_iterations = 2
+        # Arena for contacts/constraints. MuJoCo's automatic estimate is sized
+        # from a heuristic and overflows ("Insufficient arena memory for the
+        # number of constraints generated" -> segfault) on scenes that combine
+        # mesh-collision furniture with many convex-hull objects (e.g. the
+        # industrial sorting task: 3 furniture pieces + 2 totes + up to 8 parts,
+        # 16 hulls each). 256 MB is ample and costs only address space.
+        mjSpec.memory = 256 * 1024 * 1024
         
         mj_worldbody = mjSpec.worldbody
 
@@ -268,7 +280,11 @@ class MujocoSimulator(Simulator):
         self.joints, self.actuators=self.task.robot.setup_control(self.mjData, self.mjModel, mjSpec=self.mjSpec)
         
         
-        if self.articulated_object_joints is not None:
+        # Only initialise articulate joints when the scene actually has an
+        # articulated object with joints under the canonical "articulated" key.
+        # Static furniture is also attached via the articulated path (0 joints,
+        # keyed "furniture_*"), so guard against assuming an "articulated" actor.
+        if self.articulated_object_joints and "articulated" in self.task.layout.actors:
             articulate_joint_qpos = self.task.layout.actors["articulated"].asset.articulate_init_joint_qpos
             if articulate_joint_qpos is not None:
                 for joint_name, qpos in articulate_joint_qpos.items():
@@ -350,7 +366,33 @@ class MujocoSimulator(Simulator):
                 mass=0.1/num_convex,
                 # rubber on rough ground: large static, sliding and torisonal friction
                 friction=[0.8, 0.05, 0.005],
-                rgba=getattr(actor, "rgba", None) or [1, 1, 1, 1],
+                # Per-actor / per-asset tint, default plain white. actor.rgba is
+                # the weg target-tote highlight (set per episode on the one tote
+                # the robot must deliver); actor.asset.rgba is a color variant
+                # baked into the asset (e.g. bin_b04_red / bin_b04_blue in the
+                # sorting task). The two never apply to the same object, so try
+                # the actor override first, then the asset variant.
+                rgba=(
+                    getattr(actor, "rgba", None)
+                    or getattr(actor.asset, "rgba", None)
+                    or [1, 1, 1, 1]
+                ),
+                # Padding/placeholder instances opt out of collision entirely.
+                # They are parked below the floor to keep a constant object count
+                # in the recorded observations, but the ground plane is an
+                # INFINITE half-space, so a colliding body parked under it is
+                # deeply penetrating and gets ejected upward at ~140 m/s straight
+                # through the workspace.
+                contype=0 if getattr(actor.asset, "no_collision", False) else 1,
+                conaffinity=0 if getattr(actor.asset, "no_collision", False) else 1,
+                # Optional contact-detection margin. Set margin==gap so near
+                # contacts (up to `contact_margin`) are *reported* in mjData.contact
+                # without producing any force (the gap zone is force-free), leaving
+                # the physics identical. Used so a tote resting a couple mm above a
+                # shelf's convex-hull collision surface still registers as "on the
+                # shelf" for the reward/success predicate. Default 0.0 => unchanged.
+                margin=getattr(actor.asset, "contact_margin", 0.0),
+                gap=getattr(actor.asset, "contact_margin", 0.0),
                 # stiff contact and no oscillation
                 solref = [0.005, 2]
             )
@@ -633,7 +675,8 @@ class MujocoSimulator(Simulator):
         specific object's MuJoCo body/joint by name (e.g. replay scripts
         restoring recorded object poses) must go through this rather than
         assuming the bare asset label -- with several same-asset instances
-        (e.g. multiple "bin_b04" totes), the bare label is ambiguous/missing.
+        (e.g. multiple "bin_b04" totes, or the industrial sorting task's
+        screw/screwdriver copies), the bare label is ambiguous/missing.
         """
         actor = self.task.layout.actors[objtype]
         label = actor.asset.uid

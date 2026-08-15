@@ -1,5 +1,21 @@
 # Installation
 
+## Prerequisite: check out the submodules
+
+Several dependencies (`gear_sonic`, `decoupled_wbc`, `televuer`, `openpi-client`, …)
+are wired into the environment as editable path dependencies under `third_party/`
+(see `[tool.uv.sources]` in `pyproject.toml`). `uv sync` installs them from those
+local paths, so the submodules **must be checked out first** — otherwise the sync
+fails on the empty directories.
+
+If you cloned without `--recursive`, run this from the repo root:
+```
+git submodule update --init --recursive
+```
+(Cloning fresh? `git clone --recursive <repo>` does it in one step.)
+
+## Set up the environment
+
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/).
 ```
 curl -LsSf https://astral.sh/uv/install.sh | sh

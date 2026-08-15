@@ -261,6 +261,7 @@ def main(
     dr_level: Annotated[int, typer.Option()] = 0,
     record: Annotated[bool, typer.Option()] = False,
     operator: Annotated[str, typer.Option(envvar="SIMPLE_OPERATOR")] = os.getenv("USER", "unknown"),
+    industrial_material: Annotated[bool, typer.Option()] = False,
 ):
     assert sim_mode in ["mujoco"], f"Invalid sim_mode {sim_mode} for teleop."
     sim_cnt = 0
@@ -278,6 +279,7 @@ def main(
         sonic_config=sonic_config,
         target=target,
         dr_level=dr_level,
+        industrial_material=industrial_material,
     )
     sonic_env: SonicLocoManipEnv = env.unwrapped  # type: ignore
     task = sonic_env.task
@@ -331,6 +333,19 @@ def main(
         print("=" * 60)
         print("[Record] Episode reset: elastic band skipped, policy reset to initial pose")
         print("[Record] Upper body tracking PAUSED — align arms then press activation button") """
+
+        # Per-episode goal HUD streamed to the headset. Only tasks that expose
+        # `required_counts` (quantities that vary per episode) show anything;
+        # every other task keeps the plain view.
+        counts = getattr(task, "required_counts", None)
+        agent.hud_lines = (
+            [
+                f"{counts['drivers']} Chaves",
+                f"{counts['screws']} Parafusos",
+            ]
+            if counts
+            else []
+        )
 
     # stabilized_printed = False
     step_pbar = None  # Progress bar for current recording episode
@@ -478,6 +493,15 @@ def main(
 
                     if rec_state == RecordingState.RECORDING:
                         frame = _build_frame(agent, obj_names_schema, **data_frame)
+                        # Keep the recorded prompt in sync with the CURRENT episode.
+                        # Tasks whose instruction varies per episode (e.g. the
+                        # industrial sorting task's quantity DR) would otherwise be
+                        # saved under the prompt baked in at exporter init.
+                        # NOTE: set the exporter's fallback instead of putting
+                        # "task" in the frame — add_frame runs lerobot's
+                        # validate_frame first, which rejects any key that isn't a
+                        # declared feature ("Extra features: {'task'}").
+                        exporter.task = task.instruction
                         exporter.add_frame(frame)
                         if step_pbar is not None:
                             step_pbar.update(1)

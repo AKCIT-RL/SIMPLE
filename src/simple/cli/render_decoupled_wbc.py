@@ -74,6 +74,28 @@ def _load_episode_configs(data_dir: str):
     return configs
 
 
+def _load_episode_prompts(data_dir: str) -> dict[int, str]:
+    """Load the recorded language prompt of each episode from episodes.jsonl.
+
+    Tasks whose prompt varies per episode (sampled quantities, targets) must be
+    replayed with the prompt that was actually recorded; keying off tasks.jsonl
+    would collapse every episode onto one instruction.
+    """
+    meta_file = Path(data_dir) / "meta" / "episodes.jsonl"
+    if not meta_file.exists():
+        return {}
+
+    prompts: dict[int, str] = {}
+    with open(meta_file, "r") as f:
+        for line in f:
+            entry = json.loads(line)
+            ep_idx = entry.get("episode_index", None)
+            ep_tasks = entry.get("tasks", None)
+            if ep_idx is not None and ep_tasks:
+                prompts[int(ep_idx)] = ep_tasks[0]
+    return prompts
+
+
 def _init_replay_exporter(save_dir: str, fps: int, task_prompt: str, obj_names: list[str], joint_names: list[str]):
     """Create a Gr00tDataExporter for recording replayed Isaac Sim data."""
     from decoupled_wbc.control.robot_model.instantiation.g1 import (
@@ -267,6 +289,10 @@ def main(
         print("WARNING: No environment_config found in episodes.jsonl — "
               "scene will NOT match recorded episodes (objects may differ)")
 
+    episode_prompts = _load_episode_prompts(data_dir)
+    if len(set(episode_prompts.values())) > 1:
+        print(f"Loaded {len(set(episode_prompts.values()))} distinct per-episode prompts")
+
     # Determine features available
     features = dataset_info["features"]
     has_base_pose = "observation.base_pose" in features
@@ -339,15 +365,23 @@ def main(
 
             obj_names_labels = list(sonic_env.mujoco.mj_objects.keys())
             # MuJoCo body/joint name per object, not the raw asset name --
-            # with several same-asset instances (e.g. multiple "bin_b04"
-            # totes spawned by shelf_group), the raw asset name collides and
-            # doesn't match any real joint (see MujocoSimulator.mj_body_name).
+            # with several same-asset instances (e.g. multiple "bin_b04" totes
+            # spawned by shelf_group, or the industrial sorting task's screw/
+            # screwdriver copies), the raw asset name collides and doesn't match
+            # any real joint. mj_body_name applies the same dup-label
+            # disambiguation as the engine (see MujocoSimulator.mj_body_name),
+            # so duplicates are impossible by construction.
             obj_names = list(sonic_env.mujoco.mj_body_name(i) for i in obj_names_labels)
             num_objects = len(obj_names_labels)
 
+            # The prompt is per episode (sampled quantities), so it has to follow
+            # the episode being replayed instead of being frozen at exporter init.
+            task_prompt = episode_prompts.get(
+                ep_idx, _load_episode_tasks(data_dir).get(0, "")
+            )
+
             # Init exporter after first reset so obj_names are available
             if record and exporter is None:
-                task_prompt = _load_episode_tasks(data_dir)[0]
                 exporter = _init_replay_exporter(
                     f"{os.path.abspath(save_dir)}/{sonic_env.spec.id}/level-{dr_level}",
                     dataset_fps, task_prompt, fixed_obj_names,
@@ -355,6 +389,11 @@ def main(
                 )
                 print(f"[Record] Exporter initialized, saving to {save_dir}")
                 print(f"[Record] Recording {fixed_num_objects} object slots (fixed schema): {fixed_obj_names}")
+
+            if exporter is not None:
+                # LeRobot rejects a per-frame "task" key; the exporter attribute is
+                # what ends up in tasks.jsonl for the episode being written.
+                exporter.task = task_prompt
 
             # Dataset joint names for mapping observation.state → MuJoCo joints
             # dataset_joint_names = features["observation.state"]["names"]
