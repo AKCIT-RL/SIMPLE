@@ -104,6 +104,8 @@ datasets_to_be_converted/
 # nested paths under an un-ignored directory -- re-including the top-level
 # dir isn't enough, every level needs re-including, hence the trailing /**.
 data_test/*
-!data_test/README.md
-!data_test/teleop_decoupled_wbc
-!data_test/teleop_decoupled_wbc/**
+#!data_test/README.md
+#!data_test/teleop_decoupled_wbc
+#!data_test/teleop_decoupled_wbc/**
+datasets
+fix_15ep.sh
