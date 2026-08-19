@@ -387,6 +387,17 @@ def main(
                     dataset_fps, task_prompt, fixed_obj_names,
                     robot.joint_names
                 )
+                # This process may be one chunk of a multi-subprocess chunked
+                # render (see sync_and_render.py's --episode-chunk-size),
+                # resuming into an out_dir that already has episodes from
+                # earlier chunks -- episodes_saved must start from that
+                # existing count, not 0, or _save_replay_episode_env_config
+                # below will overwrite the earlier chunk's episodes.jsonl
+                # rows instead of writing the newly appended ones.
+                existing_meta_file = exporter.root / "meta" / "episodes.jsonl"
+                if existing_meta_file.exists():
+                    with open(existing_meta_file, "r") as f:
+                        episodes_saved = sum(1 for _ in f)
                 print(f"[Record] Exporter initialized, saving to {save_dir}")
                 print(f"[Record] Recording {fixed_num_objects} object slots (fixed schema): {fixed_obj_names}")
 
