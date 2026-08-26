@@ -483,7 +483,7 @@ register(
 register(
     id="simple/G1PickUpToteFromShelfToDeskPsi0-v0",
     entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
-    kwargs={"task":"g1_wholebody_locomotion_pick_totes_shelf_to_table_teleop"},
+    kwargs={"task":"g1_wholebody_locomotion_pick_totes_shelf_to_table_mirror_teleop"},
 )
 # def task_register(task):
 #     register(
