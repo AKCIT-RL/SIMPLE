@@ -39,6 +39,7 @@ robo-nix.md
 user-guides/index.md
 core/index.md
 tasks/index.md
+widowx/widowx_ai_integration.md
 workflows/index.md
 troubleshooting.md
 developer.md
