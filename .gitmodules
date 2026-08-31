@@ -32,3 +32,9 @@
 [submodule "third_party/usd2mjcf"]
 	path = third_party/usd2mjcf
 	url = https://github.com/GabrielJJ/usd2mjcf
+[submodule "third_party/trossen_arm_mujoco"]
+	path = third_party/trossen_arm_mujoco
+	url = https://github.com/TrossenRobotics/trossen_arm_mujoco
+[submodule "third_party/trossen_arm_description"]
+	path = third_party/trossen_arm_description
+	url = https://github.com/TrossenRobotics/trossen_arm_description.git

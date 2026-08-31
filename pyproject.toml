@@ -112,6 +112,10 @@ sonic = [
     "qpsolvers[open_source_solvers]",
 ]
 
+trossen = [
+    "trossen-arm-mujoco",
+]
+
 [tool.uv]
 #default-groups = ["sonic"]
 index-strategy = "unsafe-best-match"
@@ -130,6 +134,7 @@ unitree-sdk2py = {path = "third_party/unitree_sdk2_python", editable = true }
 xrobotoolkit-sdk = {path = "third_party/XRoboToolkit-PC-Service-Pybind_X86_and_ARM64", editable = true }
 decoupled-wbc = {path = "third_party/decoupled_wbc", editable = true }
 televuer = {path = "third_party/televuer", editable = true }
+trossen-arm-mujoco = {path = "third_party/trossen_arm_mujoco", editable = true }
 lerobot = {git = "https://github.com/songlin/lerobot.git", rev = "09929d8057b044b53aecaf5c6d7eb71f99e8beb9"}
 
 [project.scripts]

@@ -6192,6 +6192,18 @@ wheels = [
 ]
 
 [[package]]
+name = "pyquaternion"
+version = "0.9.9"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7d/0d/3d092aa20efaedacb89c3221a92c6491be5b28f618a2c36b52b53e7446c2/pyquaternion-0.9.9.tar.gz", hash = "sha256:b1f61af219cb2fe966b5fb79a192124f2e63a3f7a777ac3cadf2957b1a81bea8", size = 15530, upload-time = "2020-10-05T01:31:30.327Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/49/b3/d8482e8cacc8ea15a356efea13d22ce1c5914a9ee36622ba250523240bf2/pyquaternion-0.9.9-py3-none-any.whl", hash = "sha256:e65f6e3f7b1fdf1a9e23f82434334a1ae84f14223eee835190cd2e841f8172ec", size = 14361, upload-time = "2020-10-05T01:31:37.575Z" },
+]
+
+[[package]]
 name = "pyreadline3"
 version = "3.5.4"
 source = { registry = "https://pypi.org/simple" }
@@ -7007,6 +7019,9 @@ sonic = [
     { name = "unitree-sdk2py" },
     { name = "xrobotoolkit-sdk" },
 ]
+trossen = [
+    { name = "trossen-arm-mujoco" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -7070,6 +7085,7 @@ sonic = [
     { name = "unitree-sdk2py", editable = "third_party/unitree_sdk2_python" },
     { name = "xrobotoolkit-sdk", editable = "third_party/XRoboToolkit-PC-Service-Pybind_X86_and_ARM64" },
 ]
+trossen = [{ name = "trossen-arm-mujoco", editable = "third_party/trossen_arm_mujoco" }]
 
 [[package]]
 name = "simple-parsing"
@@ -7785,6 +7801,48 @@ wheels = [
 ]
 
 [[package]]
+name = "trossen-arm"
+version = "1.11.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/65/a8/c298b54bcf8c25e85087e8f1b4b43636bbcd8f0c70e5624208fe0c54b47b/trossen_arm-1.11.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:3a5b31b42d6491be483e740f9c9aee9bf245d9782f7769ca6f9eaa8ec73df5b5", size = 746128, upload-time = "2026-07-01T23:47:15.224Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/2f/10e8ae1c7c8c9e074fca0fc8727e3cfde279a1a72e896248477aaac9e0f5/trossen_arm-1.11.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:39528d20cb0540d34aa80b757b0198ac5fe261c2729869e663953352def5f037", size = 1156139, upload-time = "2026-07-01T23:47:16.671Z" },
+    { url = "https://files.pythonhosted.org/packages/00/a9/3d1f400653c62c05a4ad62c996f3ddcf25783ba595e89223cd23de14571a/trossen_arm-1.11.0-cp310-cp310-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:032200220c20dcea95e371ef5208378ff622f761865692c5ec6b34dbf07abc0d", size = 978677, upload-time = "2026-07-01T23:47:18.082Z" },
+]
+
+[[package]]
+name = "trossen-arm-mujoco"
+version = "0.0.0"
+source = { editable = "third_party/trossen_arm_mujoco" }
+dependencies = [
+    { name = "dm-control" },
+    { name = "dm-env" },
+    { name = "h5py" },
+    { name = "matplotlib" },
+    { name = "numpy" },
+    { name = "opencv-python" },
+    { name = "pyquaternion" },
+    { name = "tqdm" },
+    { name = "trossen-arm" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "dm-control" },
+    { name = "dm-env" },
+    { name = "h5py" },
+    { name = "matplotlib" },
+    { name = "numpy" },
+    { name = "opencv-python" },
+    { name = "pyquaternion" },
+    { name = "tqdm" },
+    { name = "trossen-arm" },
+]
+
+[[package]]
 name = "typeguard"
 version = "4.5.1"
 source = { registry = "https://pypi.org/simple" }
@@ -7827,8 +7885,9 @@ wheels = [
 name = "typing-extensions"
 version = "4.15.0"
 source = { registry = "https://download.pytorch.org/whl/cu128" }
+sdist = { url = "https://files.pythonhosted.org/packages/72/94/1a15dd82efb362ac84269196e94cf00f187f7ed21c242792a923cdb1c61f/typing_extensions-4.15.0.tar.gz", hash = "sha256:0cea48d173cc12fa28ecabc3b837ea3cf6f38c6d1136f85cbaaf598984861466" }
 wheels = [
-    { url = "https://download.pytorch.org/whl/typing_extensions-4.15.0-py3-none-any.whl" },
+    { url = "https://files.pythonhosted.org/packages/18/67/36e9267722cc04a6b9f15c7f3441c2363321a3ea07da7ae0c0707beb2a9c/typing_extensions-4.15.0-py3-none-any.whl", hash = "sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548" },
 ]
 
 [[package]]
