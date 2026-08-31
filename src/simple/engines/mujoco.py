@@ -210,6 +210,32 @@ class MujocoSimulator(Simulator):
         else:
             z_minus = 0.0
 
+        # The "groundplane" material referenced below has never actually been defined by SIMPLE
+        # itself -- every robot MJCF integrated so far (panda.xml, aloha.xml, vega.xml, the G1
+        # variants) happens to bundle its own leftover-from-demo-authoring texture/material named
+        # exactly "groundplane", which gets pulled in incidentally when the robot body is
+        # attached, and this ground geom just opportunistically reuses it. WidowX AI's
+        # wxai_follower.xml does not define one, exposing the accidental dependency (compile
+        # error: "material 'groundplane' not found"). Define it explicitly and unconditionally
+        # here instead (guarding against the also-common case where the robot MJCF already
+        # defines one, to avoid a duplicate-name compile error) -- values match panda.xml's own
+        # groundplane texture/material 1:1, so this is a no-op visually for existing robots.
+        if mjSpec.material("groundplane") is None:
+            groundplane_tex = mjSpec.add_texture(
+                name="groundplane",
+                type=mujoco.mjtTexture.mjTEXTURE_2D,
+                builtin=mujoco.mjtBuiltin.mjBUILTIN_CHECKER,
+                mark=mujoco.mjtMark.mjMARK_EDGE,
+                rgb1=[0.2, 0.3, 0.4],
+                rgb2=[0.1, 0.2, 0.3],
+                markrgb=[0.8, 0.8, 0.8],
+                width=300,
+                height=300,
+            )
+            groundplane_mat = mjSpec.add_material(name="groundplane", texuniform=True, reflectance=0.2)
+            groundplane_mat.texrepeat = [5, 5]
+            groundplane_mat.textures[mujoco.mjtTextureRole.mjTEXROLE_RGB] = "groundplane"
+
         # add ground plane
         ground = mj_worldbody.add_geom(
             type=mujoco.mjtGeom.mjGEOM_PLANE,  # type: ignore
@@ -605,6 +631,18 @@ class MujocoSimulator(Simulator):
                 xyaxes=[0,1,0,-0.5,0,1], 
                 fovy=fovy
             )
+        elif camera.mount == "native":
+            # The robot's own MJCF already has a <camera name=cname> element, properly attached
+            # and posed by its asset authors (e.g. WidowX AI's wrist camera "cam" in
+            # wxai_follower.xml) -- don't create a duplicate (MuJoCo requires unique camera
+            # names), just leave it as-is. self.renderers[cname] still gets built from
+            # sensor_cfgs (see reset()), so render() picks the existing camera up by name.
+            existing_names = {c.name for c in self.mj_worldbody.find_all('camera')}
+            assert cname in existing_names, (
+                f"mount='native' camera '{cname}' not found among the robot's own MJCF cameras "
+                f"{sorted(existing_names)} -- the sensor_cfgs key must match the physical "
+                f"<camera name=...> element name."
+            )
         elif camera.mount == "eye_in_head":
             torso_body = None
             for body in self.mj_worldbody.find_all('body'):
@@ -752,7 +790,11 @@ class MujocoSimulator(Simulator):
 
         robot_geom_ids = self._robot_mask_geom_ids() if mask_camera_name is not None else set()
         for mjCamera in self.mj_worldbody.find_all('camera'):
-            renderer = self.renderers[mjCamera.name]
+            # A robot's own MJCF can carry cameras that aren't declared in the task's
+            # sensor_cfgs (e.g. Aloha's "teleoperator_pov", WidowX's "cam") -- self.renderers
+            # only has entries for sensor_cfgs-declared cameras, so skip anything else instead
+            # of KeyError'ing.
+            renderer = self.renderers.get(mjCamera.name)
             if renderer is None:
                 continue
             
