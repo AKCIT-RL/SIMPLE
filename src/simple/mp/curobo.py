@@ -927,8 +927,27 @@ class CuRoboPlanner(MotionPlanner):
                 continue
 
             if isinstance(obj, BoxActor):
-                if layout.actors["robot"].robot.uid.startswith("franka") and key == "table":
-                    # HACK franka can not has table
+                # HACK: <robot>'s own base_link sits flush against the table (table_height=0 in
+                # these tasks -- the robot is mounted directly on the table surface), and a
+                # sphere-based collision approximation of a flat-bottomed base link always
+                # protrudes slightly below that true flat face (same root cause as the
+                # self-collision "flat-cap end-sphere" issue documented in
+                # docs/teleop_simple_study/widowx_ai_integration_status.md section 13/14 --
+                # there is no way to shrink that protrusion to exactly zero without also
+                # uncovering the base's own true bottom rim). Originally worked around for
+                # Franka only ("franka can not has table"); WidowX AI hits the exact same
+                # geometry (confirmed directly: base_link's own bottom sphere, even after the
+                # self-collision flat-cap fix, still reaches ~1.3cm below the table's registered
+                # top surface at z=0, producing a `MotionGenStatus.IK_FAIL` on every grasp
+                # attempt purely from the START state already "colliding" -- see
+                # docs/teleop_simple_study/widowx_ai_grasp_pose_rederivation.md). A per-link
+                # world-collision exclusion (ignore just base_link-vs-table, keep the table real
+                # for the rest of the arm) was the first choice, but curobo has no such mechanism
+                # for robot-link-vs-world-obstacle pairs (only `self_collision_ignore`, which is
+                # robot-vs-robot only) -- `disable_link_spheres` is a blunt global toggle that
+                # would also remove base_link from self-collision checking. So the table is
+                # skipped entirely for these robots, same tradeoff Franka already accepted.
+                if layout.actors["robot"].robot.uid.startswith(("franka", "widowx_ai")) and key == "table":
                     continue
                 mesh_cfg = Cuboid(
                     name=key,
