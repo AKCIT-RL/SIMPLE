@@ -24,6 +24,11 @@ register(
     kwargs={"task":"franka_tabletop_pick_n_place_mp"},
 )
 register(
+    id="simple/WidowXAITabletopGraspMP-v0",
+    entry_point="simple.envs.tabletop_grasp:TabletopGraspEnv",
+    kwargs={"task":"widowx_ai_tabletop_grasp_mp"},
+)
+register(
     id="simple/AlohaTabletopGraspMP-v0",
     entry_point="simple.envs.tabletop_grasp:TabletopGraspEnv",
     kwargs={"task":"aloha_tabletop_grasp_mp"},
