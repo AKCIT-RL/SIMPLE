@@ -220,6 +220,23 @@ class LerobotRecorder(gym.Wrapper, gym.utils.RecordConstructorArgs):
             for jname, jvalue in action.parameters["target_qpos"].items():
                 if "franka" in self.robot.uid and "finger" in jname: # skip finger joints for franka
                     continue
+                if "widowx_ai" in self.robot.uid and jname == "left_carriage_joint":
+                    # Same treatment as Franka's fingers above: the "action" feature's declared
+                    # shape comes from `_from_gym_action_space(self.task.action_space)`, and
+                    # `SingleArmBinaryEEFController.action_space` (src/simple/robots/controllers/
+                    # combo.py) is deliberately arm-only ({"arm": ...}, the eef/gripper action is
+                    # a separate `eef_action_space` property, never merged in) -- so the schema
+                    # is always arm-dof-sized (6 for WidowX AI), matching Franka's own arm-only
+                    # schema (7). Without this skip, WidowX's gripper joint (named
+                    # "left_carriage_joint", not "*finger*" like Franka/Aloha, so it hit neither
+                    # exclusion above) fell through to the generic `action_1d.append(jvalue)`
+                    # below, making the *recorded* action 7-wide against a 6-wide declared
+                    # schema -- `lerobot`'s `validate_frame` rejected every single frame with
+                    # `ValueError: The feature 'action' of shape '(7,)' does not have the
+                    # expected shape '(6,)'`, so `datagen` ran to completion (motion planning
+                    # succeeded) but saved zero actual episode data. See
+                    # docs/teleop_simple_study/widowx_ai_lerobot_action_shape_investigation.md.
+                    continue
                 if "finger" in jname:
                     gripper_side = jname.split('_')[0]
                     if gripper_side not in seen_grippers:
