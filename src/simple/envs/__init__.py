@@ -29,6 +29,16 @@ register(
     kwargs={"task":"widowx_ai_tabletop_grasp_mp"},
 )
 register(
+    id="simple/ViperXTabletopGraspMP-v0",
+    entry_point="simple.envs.tabletop_grasp:TabletopGraspEnv",
+    kwargs={"task":"viperx_tabletop_grasp_mp"},
+)
+register(
+    id="simple/MissTabletopGraspMP-v0",
+    entry_point="simple.envs.tabletop_grasp:TabletopGraspEnv",
+    kwargs={"task":"miss_tabletop_grasp_mp"},
+)
+register(
     id="simple/AlohaTabletopGraspMP-v0",
     entry_point="simple.envs.tabletop_grasp:TabletopGraspEnv",
     kwargs={"task":"aloha_tabletop_grasp_mp"},

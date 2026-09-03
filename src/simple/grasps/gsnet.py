@@ -8,7 +8,6 @@ Licensed under the terms in LICENSE file.
 import numpy as np
 import transforms3d as t3d
 from typing import Optional
-from simple.core.asset import Asset
 from simple.core.object import SpatialAnnotated
 from simple.core.types import Pose
 
@@ -43,15 +42,31 @@ class GSNet:
         
         if stable_idx is None:
             assert target_pose is not None, "Either stable_idx or stable_pose must be provided."
+            # Which cached stable pose is the object currently resting in? `target_pose.position`
+            # is the object's *absolute* world Z, i.e. `stable_poses[chosen_idx][2] +
+            # surface_height` (SpatialDR._random_place_one_object, src/simple/dr/spatial.py) --
+            # surface_height is whatever the object's resting surface sits at (0 for a floor
+            # placement, but nonzero for e.g. Miss's elevated desk, `TabletopSceneDRCfg
+            # .table_height`/`table2_height`). The exact-match comparison this replaced
+            # (`np.allclose(pose[2], target_pose.position[2], atol=1e-8)`) implicitly assumed
+            # surface_height == 0 -- true for every task built before Miss, coincidentally, not
+            # because it was ever a real invariant -- and raised "No matching stable pose found"
+            # for any nonzero surface height. Since surface_height is applied uniformly to every
+            # candidate stable pose, the *residual* `target_z - stable_poses[i][2]` recovers it
+            # exactly for the correct `i`, and should be the smallest non-negative value among all
+            # candidates (candidates other than the true one have no principled reason to produce
+            # a small, physically plausible residual). For surface_height == 0 this still selects
+            # the same index the exact match did (residual == 0 exactly, the smallest possible),
+            # so every existing task's behavior is unchanged.
+            target_z = target_pose.position[2]
+            best_index, best_residual = None, None
             for index in range(len(stable_poses)):
-                pose = stable_poses[index]
-                if np.allclose(
-                    np.array(pose[2:3]), 
-                    np.array(target_pose.position[2:3]), 
-                    rtol=0, atol=1e-8
-                ): # FIXME
-                    stable_idx = index # type: ignore
-                    break
+                residual = target_z - stable_poses[index][2]
+                if residual < -1e-6:  # this stable pose would require a *negative* surface height
+                    continue
+                if best_residual is None or residual < best_residual:
+                    best_index, best_residual = index, residual
+            stable_idx = best_index
 
         else:
             assert target_pose is not None, "Either stable_idx or stable_pose must be provided."
@@ -173,7 +188,7 @@ class GSNet:
         if len(valid_grasp_idxs) == 0:
             # If still no valid grasps, take the best ones (smallest angles)
             valid_grasp_idxs = np.argsort(angles)[:max(5, len(angles) // 4)]
-            print(f"still no valid grasps, take the best ones")
+            print("still no valid grasps, take the best ones")
 
         if reference_grasps is not None and len(reference_grasps) > 0 and len(valid_grasp_idxs) > 0:
 

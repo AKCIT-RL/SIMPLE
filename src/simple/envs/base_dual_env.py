@@ -70,8 +70,19 @@ class BaseDualSim(gym.Env):
         
         from simple.engines import MujocoSimulator
         self.mujoco = MujocoSimulator(self.task, headless=("isaac" in self.sim_mode) or headless)
-        self.task = TaskRegistry.make(task, *args, **kwargs) if isinstance(task, str) else task
-        
+        # NOTE: this used to re-fetch the task a second time here
+        # (`self.task = TaskRegistry.make(task, *args, **kwargs) if isinstance(task, str) else
+        # task`), constructing a *second*, independent Task object and reassigning `self.task` to
+        # it -- while `self.mujoco` above was already built against the *first* one. This was
+        # only ever harmless because `TaskRegistry.make()` used to memoize by uid and silently
+        # return the same cached instance on every call, so both lines produced the identical
+        # object. Now that `RegistryMixin.make()` constructs fresh each call (see its own
+        # docstring), this second call would produce a genuinely different, never-`reset()`
+        # Task, which `self.mujoco` has no reference to -- `env.reset()` would populate the
+        # wrong object's `_layout`, and `MujocoEngine._setup_scene` (reading `self.mujoco.task`)
+        # would still see `_layout is None`, raising "call reset() first". `self.task` from the
+        # branch above (used to build `self.mujoco`) is already correct; simply keep it.
+
         self.action_space = self.task.action_space
         self.observation_space = self.task.observation_space
 

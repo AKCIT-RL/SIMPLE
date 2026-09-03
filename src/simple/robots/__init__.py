@@ -9,6 +9,8 @@ from .franka_fr3 import FrankaResearch3
 from .aloha import Aloha
 from .vega import Vega1
 from .widowx_ai import WidowXAI
+from .viperx import ViperX
+from .miss import Miss
 from .protocols import WristCamMountable
 from .g1 import G1
 from .g1_inspire import G1Inspire

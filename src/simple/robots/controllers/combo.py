@@ -369,3 +369,57 @@ class BaseSingleArmBinaryEEFControllerCfg(ControllerCfg):
         self.base_cfg = base
         self.arm_cfg = arm
         self.eef_cfg = eef
+
+
+class SingleArmGimbalBinaryEEFController(Controller):
+    """Like `SingleArmBinaryEEFController`, plus an independent `gimbal` PD-joint-position group
+    (e.g. a pan/tilt camera mount) that is not part of the arm kinematic chain -- used by `Miss`
+    (`src/simple/robots/miss.py`), whose gimbal is mounted on the base, not the arm."""
+    arm: PDJointPosController
+    eef: BinaryEEFController
+    gimbal: PDJointPosController
+
+    def __init__(self, cfg: "SingleArmGimbalBinaryEEFControllerCfg"):
+        super().__init__(cfg)
+        self.arm = PDJointPosController(cfg.arm_cfg)
+        self.eef = cfg.eef_cfg()
+        self.gimbal = PDJointPosController(cfg.gimbal_cfg)
+
+    @property
+    def action_space(self) -> spaces.Space:
+        # Arm-only, matching SingleArmBinaryEEFController's own action_space -- the gimbal is not
+        # part of the arm's kinematic chain and is never driven through `target_qpos` by
+        # MotionPlannerAgent (it plans grasps for the arm only; gimbal_qpos, when set at all, goes
+        # through a separate ActionCmd key entirely). Declaring "gimbal" here made
+        # `_from_gym_action_space(self.task.action_space)` (src/simple/envs/lerobot.py) compute an
+        # 8-wide schema for a recorded action vector that's only ever actually 7-wide (6 arm + 1
+        # gripper) during this task -- confirmed directly via a real `datagen` run raising
+        # `ValueError: The feature 'action' of shape '(7,)' does not have the expected shape
+        # '(8,)'`, the same class of declared-vs-recorded mismatch already hit and fixed for
+        # WidowX AI/ViperX (see the comments in lerobot.py's step()).
+        return spaces.Dict({
+            "arm": self.arm.action_space,
+        })
+
+    @property
+    def eef_action_space(self) -> spaces.Space:
+        return self.eef.action_space
+
+    def set_initial_qpos(self, actuators: dict, joints: dict) -> None:
+        self.arm.set_initial_qpos(actuators, joints)
+        self.eef.set_initial_qpos(actuators, joints)
+        self.gimbal.set_initial_qpos(actuators, joints)
+
+
+class SingleArmGimbalBinaryEEFControllerCfg(ControllerCfg):
+    clazz: Type[Controller] = SingleArmGimbalBinaryEEFController
+
+    def __init__(
+        self,
+        arm: PDJointPosControllerCfg,
+        eef: BinaryEEFControllerCfg,
+        gimbal: PDJointPosControllerCfg,
+    ):
+        self.arm_cfg = arm
+        self.eef_cfg = eef
+        self.gimbal_cfg = gimbal

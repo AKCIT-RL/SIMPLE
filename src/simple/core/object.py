@@ -8,11 +8,17 @@ Licensed under the terms in LICENSE file.
 from .actor import Actor
 from .asset import Asset, ArticulatedAsset
 from .types import Pose, Vec3, Vec7, GraspPose
-from typing import List, Protocol, runtime_checkable
+from typing import List, Optional, Protocol, runtime_checkable
 
 class Object (Actor):
-    
+
     asset: Asset
+    # Which of `asset.stable_poses` this object was actually placed in (set by
+    # SpatialDR._random_place_one_object), so grasp lookup (GSNet.load_cached_grasps) can be told
+    # directly instead of reverse-engineering it from the object's absolute world Z -- unreliable
+    # when stable poses are within a millimeter of each other in Z and/or the resting surface isn't
+    # at world Z=0. None until an object has actually been placed by SpatialDR.
+    stable_idx: Optional[int] = None
 
     def __init__(self, asset: Asset) -> None:
         self.asset = asset

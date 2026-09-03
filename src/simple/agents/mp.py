@@ -3,6 +3,7 @@ import torch
 import numpy as np
 from copy import deepcopy
 from collections import deque
+from simple.core.action import ActionCmd
 from simple.core.actor import ObjectActor
 from simple.core.object import SpatialAnnotated
 from simple.core.task import Task
@@ -257,6 +258,7 @@ class MotionPlannerAgent(PrimitiveAgent):
                     else:
                         grasps = GSNet.load_cached_grasps(
                             target_actor.asset,
+                            stable_idx=getattr(target_actor, "stable_idx", None),
                             target_pose=object_pose,
                             max_grasps=self.plan_batch_size,
                             bias=grasp_bias
@@ -385,11 +387,60 @@ class MotionPlannerAgent(PrimitiveAgent):
                     else:
                         # not support g1
                         traj.append(dict(zip(jnames, qpos)))
-                # self.queue_follow_path_with_eef(traj, "open_eef") 
-                
+                # self.queue_follow_path_with_eef(traj, "open_eef")
+
                 #FIXME only for g1 handover
                 keep_force = spec.meta.get("keep_force",False)
+
+                # Queue the full approach path untouched (gripper stays open the whole way) --
+                # see the "_grasp_close_gate" ActionCmd appended right after this, and
+                # MotionPlannerAgent.get_action()'s handling of it, for how closing is now gated
+                # on the robot's ACTUAL live position instead of the pre-planned trajectory.
                 self.queue_follow_path(traj, keep_force=keep_force)
+
+                # `synthesize()` builds this whole action queue OFFLINE, before any physics ever
+                # runs -- an earlier attempt at fixing "gripper closes too early" computed FK on
+                # the PLANNED waypoints to decide when to start closing, but that only changes
+                # where in the PLANNED trajectory closing starts, not whether the REAL robot (P-only
+                # position actuators, no integral term, real tracking lag -- see this task's own
+                # settling-error findings elsewhere in this integration) has actually caught up to
+                # that point in real time by then -- confirmed insufficient, closing still started
+                # visibly early even after shrinking the planned-trajectory threshold twice.
+                #
+                # This appends a "gate" marker instead: MotionPlannerAgent.get_action() special-
+                # cases it (see below) to repeatedly hold the arm at the final approach qpos and
+                # check the robot's LIVE, ACTUAL end-effector position (via robot.fk() on the real
+                # observed joint state) against the true grasp target every env.step(), only
+                # letting the queue advance into the closing ramp once genuinely within
+                # `close_within` -- a real closed-loop wait, not a planning-time estimate.
+                if grasp_type == "parallel_gripper" and len(traj) > 0:
+                    try:
+                        eef_ctrl = self.controller.eef
+                        finger_joints = eef_ctrl.cfg.joint_names
+                        open_vals = getattr(eef_ctrl.cfg, "open_qpos", None) or [0.0205] * len(finger_joints)
+                        close_vals = getattr(eef_ctrl.cfg, "close_qpos", None) or [0.0] * len(finger_joints)
+                        hold_qpos = dict(traj[-1])
+                        n_ramp = 15
+                        ramp_actions = []
+                        for i in range(n_ramp):
+                            alpha = (i + 1) / n_ramp  # (0, 1], exactly closed on the last ramp step
+                            wp = dict(hold_qpos)
+                            for jname, ov, cv in zip(finger_joints, open_vals, close_vals):
+                                wp[jname] = (1 - alpha) * ov + alpha * cv
+                            ramp_actions.append(ActionCmd("move_qpos", target_qpos=wp, keep_force=keep_force))
+                        self._action_queue.append(ActionCmd(
+                            "_grasp_close_gate",
+                            target_qpos=hold_qpos,
+                            gate_target_pos=np.asarray(plan_grasp_proses[-1]["position"]),
+                            gate_threshold=spec.meta.get("close_within", 0.01),
+                            gate_joint_names=list(hold_qpos.keys()),
+                            gate_ramp=ramp_actions,
+                        ))
+                    except Exception as e:
+                        # Fall back to the old, always-worked behavior (CloseGripperSpec's own
+                        # 10 close_eef commands, queued immediately after this by decompose())
+                        # rather than ever blocking a grasp attempt from proceeding.
+                        print(f"[MP Agent] Could not build a live grasp-close gate, closing immediately after approach instead: {e}")
 
                 # self._grasp_qpos = traj[-1] # HACK store for lift planning
                 self._last_traj_qpos = traj[-1] # HACK store for lift planning
@@ -598,6 +649,38 @@ class MotionPlannerAgent(PrimitiveAgent):
             
         return True
     
+    def get_action(self, observation, instruction=None, **kwargs):
+        """Overrides PrimitiveAgent.get_action() to special-case the "_grasp_close_gate" marker
+        (queued by GraspObjectSpec's handling above): while it sits at the front of the action
+        queue, hold the arm at the final approach qpos and re-check the robot's ACTUAL live
+        end-effector position (via robot.fk() on the real observed joint state, not the
+        pre-planned trajectory) against the true grasp target on every call -- only once genuinely
+        within `gate_threshold` does the queue advance into the closing ramp queued right after
+        the gate. Every other action passes through to the base implementation unchanged."""
+        if self._action_queue and self._action_queue[0].type == "_grasp_close_gate":
+            gate = self._action_queue[0]
+            if observation is not None and "agent" in observation:
+                self._last_qpos = dict(zip(self.robot.joint_names, observation["agent"]))
+            try:
+                # Pass a dict (not a list) -- robot.fk() reorders internally via its own
+                # kin_model.joint_names, avoiding any assumption that gate_joint_names (sourced
+                # from curobo's motion_gen joint order) matches kin_model's own order exactly.
+                live_qpos = {jn: self._last_qpos[jn] for jn in gate.parameters["gate_joint_names"] if jn in self._last_qpos}
+                ee_pos, _ = self.robot.fk(live_qpos)
+                dist = float(np.linalg.norm(np.asarray(ee_pos) - gate.parameters["gate_target_pos"]))
+            except Exception as e:
+                # Can't measure live distance for some reason -- don't stall the episode forever
+                # over a scheduling refinement, open the gate immediately instead.
+                print(f"[MP Agent] Could not evaluate live grasp-close gate, closing immediately: {e}")
+                dist = 0.0
+            if dist > gate.parameters["gate_threshold"]:
+                action = ActionCmd("move_qpos", target_qpos=gate.parameters["target_qpos"])
+                self._last_pred_action = action
+                return action
+            self._action_queue.popleft()
+            self._action_queue.extendleft(reversed(gate.parameters["gate_ramp"]))
+        return super().get_action(observation, instruction, **kwargs)
+
     def reset(self):
         """Reset the agent state, including subtask index for multi-phase planning."""
         super().reset()

@@ -187,6 +187,7 @@ class SpatialDR(Randomizer):
                         state = self._inner_state[f"container_{obj.uid}" ]
                         obj.pose.position = state["position"]
                         obj.pose.quaternion = state["quaternion"]
+                        obj.stable_idx = state.get("stable_idx")
                     else:
                         surface_name = self.cfg.obj_surface_map.get("container", "table") if self.cfg.obj_surface_map else "table"
                         surface_height = surface_heights.get(surface_name, surface_heights["default"])
@@ -202,6 +203,7 @@ class SpatialDR(Randomizer):
                         state = self._inner_state[str(obj.uid)]
                         obj.pose.position = state["position"]
                         obj.pose.quaternion = state["quaternion"]
+                        obj.stable_idx = state.get("stable_idx")
                     else:
                         surface_name = self.cfg.obj_surface_map.get("target", "table") if self.cfg.obj_surface_map else "table"
                         surface_height = surface_heights.get(surface_name, surface_heights["default"])
@@ -221,6 +223,7 @@ class SpatialDR(Randomizer):
                         state = self._inner_state[str(obj.uid)]
                         obj.pose.position = state["position"]
                         obj.pose.quaternion = state["quaternion"]
+                        obj.stable_idx = state.get("stable_idx")
                     else:
                         surface_entry = self.cfg.obj_surface_map.get(objtype) or self.cfg.obj_surface_map.get("distractor", "table") if self.cfg.obj_surface_map else "table"
                         if isinstance(surface_entry, list):
@@ -243,15 +246,15 @@ class SpatialDR(Randomizer):
         object_msh=trimesh.load_mesh(obj.asset.collision_mesh_curobo)
         for _ in range(100):
             if objtype == "container":
-                stable_pose = obj.asset.stable_poses[0] # only use the first stable pose for container
+                stable_idx = 0 # only use the first stable pose for container
             elif self.spatial_mode == "fixed":
-                stable_pose = obj.asset.stable_poses[self.fixed_stable_pose_idx]
+                stable_idx = self.fixed_stable_pose_idx
             else:
-                # stable_pose = random.choice(obj.asset.stable_poses)
                 if self.cfg.target_stable_indices is not None:
-                    stable_pose = obj.asset.stable_poses[random.choice(self.cfg.target_stable_indices)]
+                    stable_idx = random.choice(self.cfg.target_stable_indices)
                 else:
-                    stable_pose = random.choice(obj.asset.stable_poses)
+                    stable_idx = random.randrange(len(obj.asset.stable_poses))
+            stable_pose = obj.asset.stable_poses[stable_idx]
             p = np.zeros((3,), dtype=np.float32)
             p[:2] += np.asarray(region.sample(), dtype=np.float32) # random xy
             p[2] = stable_pose[2] + surface_height
@@ -280,15 +283,24 @@ class SpatialDR(Randomizer):
                 self.collision_manager.add_object(obj.uid, object_msh, transformation)
                 # obj.pose.quaternion = [0.6013860816541081, 9.584801678524222e-05, -0.0020859967168959104, -0.7989558312094444 ] # FIXME #t3d.quaternions.mat2quat(rand_ori_mat).tolist()
                 obj.pose.quaternion = t3d.quaternions.mat2quat(rand_ori_mat).tolist()
+                # Remember which stable pose was actually chosen (not just its Z), so grasp lookup
+                # (GSNet.load_cached_grasps) can be told the exact index directly instead of trying
+                # to reverse-engineer it from the object's absolute world Z -- reverse-engineering
+                # is unreliable when several stable poses differ by less than a millimeter in Z
+                # (true for the graspnet1b banana asset) and/or `surface_height` is nonzero (true
+                # for Miss's elevated desk), since either dwarfs the true residual signal.
+                obj.stable_idx = stable_idx
                 if objtype == "container":
                     self._inner_state[f"container_{obj.uid}"] = {
                         "position": obj.pose.position,
-                        "quaternion": obj.pose.quaternion
+                        "quaternion": obj.pose.quaternion,
+                        "stable_idx": stable_idx,
                     }
                 else:
                     self._inner_state[obj.uid] = {
                         "position": obj.pose.position,
-                        "quaternion": obj.pose.quaternion
+                        "quaternion": obj.pose.quaternion,
+                        "stable_idx": stable_idx,
                     }
                 return True
         print(f"Warning: Failed to place object {obj.uid} without collision after 100 attempts.")

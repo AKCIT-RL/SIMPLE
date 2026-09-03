@@ -70,6 +70,7 @@ from typing import Annotated
 os.environ.setdefault("MUJOCO_GL", "egl")
 
 import mujoco
+import numpy as np
 import typer
 import yaml
 from PIL import Image
@@ -138,6 +139,46 @@ ROBOTS = {
         },
         lookat={"rest": [0.0, 0.0, 0.12], "close-high": [0.0, 0.0, 0.2]},
     ),
+    "viperx": dict(
+        mjcf="data/robots/viperx/viperx.xml",
+        spheres="data/robots/viperx/curobo/spheres/viperx.yml",
+        # Unlike Franka/WidowX AI's zero-offset body_map entries, these three curobo collision
+        # links have a genuinely nonzero fixed-joint offset from their MJCF parent body (confirmed
+        # directly in viperx.urdf) -- left_gripper_camera and both left_custom_finger_*_link
+        # links are separate URDF links purely for curobo's own kinematics, with no matching body
+        # in viperx.xml at all (the MJCF draws their meshes directly inside left_gripper_base /
+        # left_*_finger_link). All three joints are pure single-axis rotations about local X (no
+        # ambiguity in interpreting the URDF's rpy convention), so each tuple below is
+        # (parent_body_name, translation, rotation-about-X in radians); build_spec applies
+        # center' = Rx(theta) @ center + translation before parenting the sphere geom.
+        body_map={
+            "left_gripper_camera": ("left_gripper_base", [0.0, -0.0824748, -0.0095955], -0.4363331),
+            "left_custom_finger_left_link": ("left_left_finger_link", [0.0141637, 0.0211727, 0.06], 1.5707963),
+            "left_custom_finger_right_link": ("left_right_finger_link", [0.0141637, -0.0211727, 0.0597067], -1.5707963),
+        },
+        skip_links=set(),
+        qpos_presets={
+            "rest": dict(
+                zip(
+                    ["left_waist", "left_shoulder", "left_elbow", "left_forearm_roll", "left_wrist_angle", "left_wrist_rotate", "left_left_finger", "left_right_finger"],
+                    [0.0, -0.96, 1.16, 0.0, -0.3, 0.0, 0.04, 0.04],
+                )
+            ),
+            # Arm configuration actually reached near the end of a real datagen episode
+            # (simple/ViperXTabletopGraspMP-v0, close+lift phase), gripper closed -- a genuine
+            # grasp-adjacent pose rather than a hand-picked one.
+            "grasp": dict(
+                zip(
+                    ["left_waist", "left_shoulder", "left_elbow", "left_forearm_roll", "left_wrist_angle", "left_wrist_rotate", "left_left_finger", "left_right_finger"],
+                    [-0.08261728, 0.3257859, -0.35722694, 0.09496467, 1.5119039, 1.3201247, 0.0, 0.0],
+                )
+            ),
+        },
+        # Unlike Franka/WidowX AI, viperx.xml's left_base_link sits at world x=-0.469 (inherited
+        # unchanged from Aloha's own left-arm mount offset) rather than the origin -- lookat is
+        # centered on the arm's own reach envelope, not world [0,0,z].
+        lookat={"rest": [-0.3, 0.0, 0.25], "grasp": [-0.3, 0.0, 0.25]},
+    ),
 }
 
 
@@ -166,7 +207,19 @@ def build_spec(robot_cfg: dict) -> mujoco.MjSpec:
 
     for i, link_name in enumerate(link_names):
         color = _color_for_index(i, len(link_names))
-        body_name = robot_cfg["body_map"].get(link_name, link_name)
+        mapping = robot_cfg["body_map"].get(link_name, link_name)
+        # A tuple mapping means the curobo collision link has a nonzero fixed-joint offset from
+        # its MJCF parent body (see the "viperx" body_map comment above) -- transform each
+        # sphere's center out of the curobo link's own local frame into the parent body's frame
+        # before parenting it there. A plain string means zero offset (the existing
+        # Franka/WidowX AI behavior): the curobo link name already matches a real MJCF body, or
+        # is a straight rename of one.
+        if isinstance(mapping, tuple):
+            body_name, offset_pos, rot_x_rad = mapping
+            cos_t, sin_t = np.cos(rot_x_rad), np.sin(rot_x_rad)
+            rot_x = np.array([[1, 0, 0], [0, cos_t, -sin_t], [0, sin_t, cos_t]])
+        else:
+            body_name, offset_pos, rot_x = mapping, None, None
         body = spec.body(body_name)
         if body is None:
             print(f"  [skip] no body named '{body_name}' (from spheres.yml link '{link_name}')")
@@ -175,10 +228,13 @@ def build_spec(robot_cfg: dict) -> mujoco.MjSpec:
             radius = sphere["radius"]
             if radius < 0:
                 continue  # curobo's convention for a disabled sphere
+            center = sphere["center"]
+            if offset_pos is not None:
+                center = (rot_x @ np.asarray(center, dtype=float) + np.asarray(offset_pos, dtype=float)).tolist()
             body.add_geom(
                 type=mujoco.mjtGeom.mjGEOM_SPHERE,
                 size=[radius, 0, 0],
-                pos=sphere["center"],
+                pos=center,
                 rgba=color,
                 contype=0,
                 conaffinity=0,

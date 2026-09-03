@@ -28,6 +28,8 @@ from .aloha_tabletop_handover_mp import AlohaTabletopHandoverTaskMP
 from .aloha_tabletop_find_n_grasp_mp import AlohaTabletopFindNGraspTaskMP
 from .vega_tabletop_grasp_mp import VegaTabletopGraspMP
 from .widowx_ai_tabletop_grasp_mp import WidowXAITabletopGraspTaskMP
+from .viperx_tabletop_grasp_mp import ViperXTabletopGraspTaskMP
+from .miss_tabletop_grasp_mp import MissTabletopGraspTaskMP
 
 
 from .g1_tabletop_grasp_mp import G1TabletopGraspMP

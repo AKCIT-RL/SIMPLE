@@ -203,10 +203,22 @@ class MujocoSimulator(Simulator):
             self._build_camera(cname, camera)
 
         if not self._is_sonic:
-            z_minus = self.task.layout.scene.table.pose.position[2] + 0.5 * self.task.layout.scene.table.size[2]
-            if hasattr(self.task.robot, "z_offset"):
-                # HACK for vega robot base height
-                z_minus += self.task.robot.z_offset-self.robot_z
+            if getattr(self.task.robot, "floor_grounded", False):
+                # A "floor_grounded" robot is one whose task deliberately places it so its own
+                # floor-contact point (wheels, feet, ...) touches literal world Z=0 -- for Miss,
+                # `self.robot_z` (its *origin*, i.e. base_link) is actually `_ROBOT_Z_OFFSET`
+                # above that contact point on purpose (see miss_tabletop_grasp_mp.py), so the
+                # groundplane belongs at world Z=0 itself, not at `self.robot_z`. The table-height
+                # -relative formula below has no relationship to where this robot's floor contact
+                # actually is, and -- unlike Vega1's `z_offset` -- cannot be fixed by a constant
+                # shift, because its error term scales with table_height, a per-task-instance
+                # value. Skip it entirely.
+                z_minus = 0.0
+            else:
+                z_minus = self.task.layout.scene.table.pose.position[2] + 0.5 * self.task.layout.scene.table.size[2]
+                if hasattr(self.task.robot, "z_offset"):
+                    # HACK for vega robot base height
+                    z_minus += self.task.robot.z_offset-self.robot_z
         else:
             z_minus = 0.0
 

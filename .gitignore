@@ -120,3 +120,4 @@ data_test/*
 !data_test/README.md
 !data_test/teleop_decoupled_wbc
 !data_test/teleop_decoupled_wbc/**
+viperx/misskal_hardware/

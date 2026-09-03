@@ -237,6 +237,26 @@ class LerobotRecorder(gym.Wrapper, gym.utils.RecordConstructorArgs):
                     # succeeded) but saved zero actual episode data. See
                     # docs/teleop_simple_study/widowx_ai_lerobot_action_shape_investigation.md.
                     continue
+                if "viperx" in self.robot.uid and "finger" in jname:
+                    # ViperX (src/simple/robots/viperx.py) is single-arm (SingleArmBinaryEEFController,
+                    # arm-only action_space, 6-wide), unlike Aloha -- whose two finger joints hit the
+                    # generic dedup branch below but have their contribution to `frame["action"]`
+                    # discarded and replaced wholesale by the "FOR ALOHA" DualArm-specific branch
+                    # further down. ViperX has no such override, so the deduped single gripper value
+                    # from the generic branch would fall straight into the recorded vector, making it
+                    # 7-wide against the declared 6-wide (arm-only) schema -- the same shape-mismatch
+                    # bug documented for WidowX AI above, reproduced empirically via one datagen run.
+                    continue
+                if "miss" in self.robot.uid and jname == "left_finger":
+                    # Same shape-mismatch class as WidowX AI/ViperX above: Miss's
+                    # SingleArmGimbalBinaryEEFController.action_space (src/simple/robots/
+                    # controllers/combo.py) was made arm-only (6-wide) to match what
+                    # MotionPlannerAgent actually commands for this task (the gimbal is never
+                    # driven through target_qpos during grasping) -- without this skip, Miss's
+                    # single gripper joint ("left_finger") would fall through to the generic
+                    # finger-dedup branch below and get appended once, making the recorded
+                    # action 7-wide against the declared 6-wide schema.
+                    continue
                 if "finger" in jname:
                     gripper_side = jname.split('_')[0]
                     if gripper_side not in seen_grippers:

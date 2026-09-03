@@ -46,7 +46,7 @@ class BinaryEEFControllerCfg(ControllerCfg):
 
     def __call__(self) -> BinaryEEFController:
         return BinaryEEFController(self, self.joint_names, self.init_qpos)
-    
+
 
 class ParallelGripperEEFController(BinaryEEFController):
     def __init__(self, cfg, joint_names: list[str], init_qpos: list[float]):
@@ -63,20 +63,43 @@ class ParallelGripperEEFController(BinaryEEFController):
             # actuators[jname].ctrl = 0.0205
 
     def open_gripper(self, actuators: dict) -> None:
-        for jname in self.cfg.joint_names:
-            actuators[jname].ctrl = 0.0205
+        # `open_qpos`/`close_qpos` default to the historical hardcoded values (0.0205/0.0) so
+        # ViperX/Aloha, which never set them, keep their exact prior behavior. Miss's `left_finger`
+        # actuator has a real `ctrlrange="0.021 0.057"` (unlike ViperX/Aloha's unclamped `general`
+        # actuators) -- 0.0205/0.0 both fall outside it and silently clamp to the same boundary
+        # (0.021), making "open" and "close" produce the identical joint position. Miss's cfg sets
+        # open_qpos/close_qpos explicitly to its own real range instead of relying on these defaults.
+        open_qpos = getattr(self.cfg, "open_qpos", None) or [0.0205] * len(self.cfg.joint_names)
+        for jname, qpos in zip(self.cfg.joint_names, open_qpos):
+            actuators[jname].ctrl = qpos
 
     def close_gripper(self, actuators: dict) -> None:
-        for jname in self.cfg.joint_names:
-            actuators[jname].ctrl = 0.
+        close_qpos = getattr(self.cfg, "close_qpos", None) or [0.0] * len(self.cfg.joint_names)
+        for jname, qpos in zip(self.cfg.joint_names, close_qpos):
+            actuators[jname].ctrl = qpos
 
 
 class ParallelGripperEEFControllerCfg(BinaryEEFControllerCfg):
     clazz: type[Controller] = ParallelGripperEEFController
 
+    def __init__(
+        self,
+        joint_names: list[str],
+        init_qpos: list[float],
+        open_qpos: list[float] | None = None,
+        close_qpos: list[float] | None = None,
+    ):
+        super().__init__(joint_names, init_qpos)
+        # Per-joint ctrl targets for open_gripper()/close_gripper() -- see the comment in
+        # ParallelGripperEEFController.open_gripper for why these can't stay hardcoded across
+        # every robot using this controller. None (the default) preserves the historical
+        # hardcoded 0.0205/0.0 behavior for callers that don't set them (ViperX, Aloha).
+        self.open_qpos = open_qpos
+        self.close_qpos = close_qpos
+
     def __call__(self) -> ParallelGripperEEFController:
         return ParallelGripperEEFController(self, self.joint_names, self.init_qpos)
-    
+
     # @property
     # def init_joint_states(self) -> list[float]:
     #     return []
