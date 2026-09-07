@@ -4,6 +4,7 @@ import importlib
 import json
 import multiprocessing as mp
 import os
+import random
 from collections import defaultdict
 from contextlib import contextmanager
 from multiprocessing.connection import wait
@@ -103,6 +104,246 @@ def _make_sonic_config() -> dict[str, Any]:
     return sonic_config
 
 
+# A condition value of exactly this means "leave the key out of the state_dict",
+# i.e. keep whatever the episode recorded (the task samples when it recorded
+# nothing).
+_RECORDED = "recorded"
+
+
+def _load_eval_datasets(
+    config_path: str,
+) -> list[tuple[str, str, str, dict[str, Any]]]:
+    """Parse an --eval-config YAML into [(name, data_dir, prompt_mode, conditions)].
+
+    A dataset entry is a plain lerobot root (a dir holding meta/, data/,
+    videos/) -- what postprocess_psi0_sonic.py emits and what
+    render-decoupled-wbc --save-dir writes. Entries may be a bare path string
+    or a mapping {name, path, prompt, conditions}.
+    """
+    import yaml
+
+    with open(config_path, "r") as f:
+        raw = yaml.safe_load(f) or {}
+
+    entries = raw.get("datasets")
+    if not entries:
+        raise typer.BadParameter(f"{config_path}: no 'datasets' entries found.")
+
+    datasets: list[tuple[str, str, str]] = []
+    used_names: dict[str, int] = {}
+    for i, entry in enumerate(entries):
+        if isinstance(entry, str):
+            entry = {"path": entry}
+        if not isinstance(entry, dict) or not entry.get("path"):
+            raise typer.BadParameter(f"{config_path}: datasets[{i}] needs a 'path'.")
+
+        path = os.path.expanduser(str(entry["path"]))
+        info_path = Path(path) / "meta" / "info.json"
+        if not info_path.exists():
+            raise typer.BadParameter(
+                f"{config_path}: datasets[{i}] is not a lerobot root -- "
+                f"missing {info_path}."
+            )
+
+        prompt_mode = str(entry.get("prompt", "recorded"))
+        if prompt_mode not in ("recorded", "task"):
+            raise typer.BadParameter(
+                f"{config_path}: datasets[{i}] has prompt={prompt_mode!r}, "
+                "expected 'recorded' or 'task'."
+            )
+
+        # A capture/render root is <env_id>/level-<n>, so the basename alone
+        # would be "level-0" for every entry -- fall back to the dir above it.
+        default_name = Path(path).name
+        if default_name.startswith("level-"):
+            default_name = Path(path).parent.name or default_name
+        name = str(entry.get("name") or default_name)
+        seen = used_names.get(name, 0)
+        used_names[name] = seen + 1
+        if seen:
+            name = f"{name}_{seen + 1}"
+
+        conditions = entry.get("conditions") or {}
+        if not isinstance(conditions, dict):
+            raise typer.BadParameter(
+                f"{config_path}: datasets[{i}] conditions must be a mapping."
+            )
+        for key, value in conditions.items():
+            values = value if isinstance(value, list) else [value]
+            if not values:
+                raise typer.BadParameter(
+                    f"{config_path}: datasets[{i}] condition {key!r} is empty."
+                )
+            # Values are written into the state_dict verbatim, so the task
+            # decides what is valid -- except "random", which would be stored
+            # as the literal string and blow up when the task formats it.
+            if any(str(v) == "random" for v in values):
+                raise typer.BadParameter(
+                    f"{config_path}: datasets[{i}] condition {key!r} cannot be "
+                    "'random'. List the values you want instead (e.g. "
+                    f"{key}: [left, right]), which also balances them evenly."
+                )
+
+        overrides = [k for k, v in conditions.items()
+                     if not (not isinstance(v, list) and str(v) == _RECORDED)]
+        if overrides and prompt_mode != "task":
+            # The recorded prompt describes the command the episode was captured
+            # under. Overriding that command while replaying its wording would
+            # tell the policy one thing and score it on another.
+            raise typer.BadParameter(
+                f"{config_path}: datasets[{i}] overrides {sorted(overrides)} but "
+                "keeps prompt='recorded'. Set prompt: task so the task rebuilds "
+                "the instruction from the command being issued."
+            )
+
+        datasets.append((name, path, prompt_mode, conditions))
+    return datasets
+
+
+def _eligible_episodes(data_dir: str) -> tuple[list[int], int]:
+    """Episode indices usable as eval starting states, plus how many were
+    dropped. An episode is usable only if its meta/episodes.jsonl row carries an
+    environment_config -- that JSON *is* the scene state_dict the eval replays.
+
+    In a psi0 dataset every row has one by construction (postprocess_psi0_sonic
+    .py skips episodes that arrive without it), so this is a guard for raw and
+    rendered roots, where a chunked render could leave rows unpatched -- see
+    scripts/patch_missing_environment_config.py.
+    """
+    meta_file = Path(data_dir) / "meta" / "episodes.jsonl"
+    if not meta_file.exists():
+        raise typer.BadParameter(f"{data_dir}: missing {meta_file}.")
+
+    eligible: list[int] = []
+    dropped = 0
+    with open(meta_file, "r") as f:
+        for line in f:
+            entry = json.loads(line)
+            ep_idx = entry.get("episode_index")
+            if ep_idx is None:
+                continue
+            if entry.get("environment_config"):
+                eligible.append(int(ep_idx))
+            else:
+                dropped += 1
+    return eligible, dropped
+
+
+def _resolve_conditions(
+    conditions: dict[str, Any], position: int
+) -> tuple[tuple[str, Any], ...]:
+    """Per-episode condition overrides, as sorted (key, value) pairs.
+
+    A scalar pins the same value on every episode of the dataset; a list is
+    dealt round-robin over the dataset's episodes, which is how an unbalanced
+    corpus still yields a balanced set of *commands* (the old single-table
+    captures carry no side at all, yet either side is a fair thing to ask for).
+    "recorded" leaves the key out so the episode's own value survives.
+    """
+    resolved: list[tuple[str, Any]] = []
+    for key in sorted(conditions):
+        value = conditions[key]
+        if isinstance(value, list):
+            value = value[position % len(value)]
+        if str(value) == _RECORDED:
+            continue
+        resolved.append((key, value))
+    return tuple(resolved)
+
+
+def _build_episode_plan(
+    datasets: list[tuple[str, str, str, dict[str, Any]]],
+    num_episodes: int,
+    seed: int,
+) -> tuple[tuple[str, str, int, str, tuple[tuple[str, Any], ...]], ...]:
+    """Resolve the exact episodes this run evaluates, once, in the parent.
+
+    Returns [(source_name, data_dir, episode_index, prompt_mode, conditions)].
+    Workers just take plan[worker_id::num_workers]: with several datasets an
+    episode index alone is ambiguous, and having every worker re-derive a
+    *random* sample would risk them disagreeing and double-running (or
+    skipping) episodes.
+
+    Episodes are split evenly across datasets, so a large corpus doesn't drown
+    out a small one, and picked at random within each dataset from `seed` --
+    reproducible across runs and across policies.
+    """
+    if num_episodes <= 0:
+        raise typer.BadParameter(f"num_episodes must be > 0, got {num_episodes}")
+
+    pools: list[list[int]] = []
+    fps_by_name: dict[str, Any] = {}
+    for name, path, _, _ in datasets:
+        with open(Path(path) / "meta" / "info.json", "r") as f:
+            info = json.load(f)
+        fps_by_name[name] = info.get("fps")
+
+        eligible, dropped = _eligible_episodes(path)
+        if dropped:
+            print(
+                f"[eval-config] {name}: skipping {dropped} episode(s) without "
+                "environment_config (recover them with "
+                "scripts/patch_missing_environment_config.py)"
+            )
+        if not eligible:
+            raise typer.BadParameter(
+                f"{path}: no episodes with an environment_config to evaluate."
+            )
+        pools.append(eligible)
+
+    # render_hz is fixed once at gym.make, so mixed fps would silently run every
+    # dataset but the first at the wrong rate.
+    if len(set(fps_by_name.values())) > 1:
+        raise typer.BadParameter(
+            f"datasets disagree on fps: {fps_by_name}. All eval sources must "
+            "share one fps."
+        )
+
+    counts = [len(pool) for pool in pools]
+    target = min(num_episodes, sum(counts))
+    if target < num_episodes:
+        print(
+            f"[eval-config] only {target} eligible episode(s) available, "
+            f"requested {num_episodes}."
+        )
+
+    quotas = [0] * len(datasets)
+    while sum(quotas) < target:
+        open_idx = [i for i in range(len(datasets)) if quotas[i] < counts[i]]
+        share, rest = divmod(target - sum(quotas), len(open_idx))
+        for k, i in enumerate(open_idx):
+            quotas[i] = min(counts[i], quotas[i] + share + (1 if k < rest else 0))
+
+    plan: list[tuple[str, str, int, str, tuple[tuple[str, Any], ...]]] = []
+    for i, ((name, path, prompt_mode, conditions), pool, quota) in enumerate(
+        zip(datasets, pools, quotas)
+    ):
+        # seed + i so equally sized datasets don't draw identical indices.
+        chosen = random.Random(seed + i).sample(pool, quota)
+        # Round-robin over the sorted picks, so a list condition is dealt
+        # evenly and reproducibly regardless of the draw order.
+        plan.extend(
+            (name, path, idx, prompt_mode, _resolve_conditions(conditions, position))
+            for position, idx in enumerate(sorted(chosen))
+        )
+
+    # Interleave the sources so an interrupted run still covers all of them.
+    random.Random(seed).shuffle(plan)
+    print(
+        "[eval-config] plan: "
+        + ", ".join(f"{n}={q}" for (n, _, _, _), q in zip(datasets, quotas))
+        + f" (total {len(plan)}, seed {seed})"
+    )
+    commanded = defaultdict(int)
+    for name, _, _, _, conditions in plan:
+        if conditions:
+            commanded[(name, conditions)] += 1
+    for (name, conditions), count in sorted(commanded.items()):
+        pairs = ", ".join(f"{k}={v}" for k, v in conditions)
+        print(f"[eval-config] commanding {name}: {pairs} x{count}")
+    return tuple(plan)
+
+
 def _run_eval_worker_entry(
     worker_result_path: str,
     worker_id: int,
@@ -159,6 +400,7 @@ def _run_eval_worker(
     success_criteria: Annotated[float, typer.Option()] = 0.7,
     save_video: Annotated[bool, typer.Option("--save-video/--no-save-video")] = True,
     sonic_config: dict[str, Any] | None = None,
+    episode_plan: tuple[tuple[str, str, int, str, tuple[tuple[str, Any], ...]], ...] | None = None,
     worker_id: int = 0,
     num_workers: int = 1,
     worker_result_path: str | None = None,
@@ -186,7 +428,56 @@ def _run_eval_worker(
     if episode_start < 0:
         raise ValueError(f"episode_start must be >= 0, got {episode_start}")
 
-    if data_format == "rlds_numpy":
+    # Only the `vlt` baseline consumes the episode frames (see reset_kwargs
+    # below); for every other policy, materializing them decodes thousands of
+    # video frames per episode and throws them away.
+    load_frames = policy == "vlt"
+
+    # Each work item is (task_id, source_data_dir, episode_index, prompt_mode,
+    # conditions). source_data_dir is None on the legacy single --data-dir path.
+    work_items: list[tuple[str, str | None, int, str, tuple[tuple[str, Any], ...]]]
+
+    if episode_plan is not None:
+        if data_format != "lerobot":
+            raise NotImplementedError(
+                f"--eval-config requires --data-format lerobot, got {data_format}."
+            )
+        from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+        from simple.datasets.lerobot import (
+            _load_episode_prompts,
+            get_episode_lerobot,
+        )
+
+        _open_datasets: dict[str, Any] = {}
+        _open_prompts: dict[str, dict[int, str]] = {}
+
+        def _dataset_for(path: str):
+            if path not in _open_datasets:
+                print(f"opening eval dataset {path}")
+                _open_datasets[path] = LeRobotDataset(repo_id=env_id, root=path)
+            return _open_datasets[path]
+
+        def _prompts_for(path: str) -> dict[int, str]:
+            if path not in _open_prompts:
+                _open_prompts[path] = _load_episode_prompts(path)
+            return _open_prompts[path]
+
+        def get_episode(dataset_obj, idx):
+            return get_episode_lerobot(dataset_obj, idx, load_frames=load_frames)
+
+        # Read fps from meta rather than from a dataset, so a worker never opens
+        # a source it wasn't assigned any episode from. The parent already
+        # validated that every source agrees on it.
+        with open(Path(episode_plan[0][1]) / "meta" / "info.json", "r") as f:
+            render_hz = json.load(f)["fps"]
+
+        assigned = list(episode_plan)[worker_id::num_workers]
+        work_items = [
+            (f"{name}__episode_{idx}", path, idx, prompt_mode, conditions)
+            for name, path, idx, prompt_mode, conditions in assigned
+        ]
+    elif data_format == "rlds_numpy":
         data_path = Path(eval_dir) / env_id / split
         assert data_path.exists(), f"Data path {data_path} does not exist."
         dataset = sorted(list(data_path.glob("*episode_*.pkl")))
@@ -217,19 +508,24 @@ def _run_eval_worker(
         print(f"loaded dataset with {dataset_size} episodes.")
 
         def get_episode(dataset_obj, idx):
-            return get_episode_lerobot(dataset_obj, idx)
+            return get_episode_lerobot(dataset_obj, idx, load_frames=load_frames)
     else:
         raise NotImplementedError(f"Data format {data_format} not supported YET.")
 
-    global_episode_indices = list(range(episode_start, dataset_size))
-    global_episode_indices = global_episode_indices[:num_episodes]
-    episode_indices = global_episode_indices[worker_id::num_workers]
+    if episode_plan is None:
+        global_episode_indices = list(range(episode_start, dataset_size))
+        global_episode_indices = global_episode_indices[:num_episodes]
+        episode_indices = global_episode_indices[worker_id::num_workers]
+        work_items = [
+            (f"episode_{idx}", None, idx, "task", ()) for idx in episode_indices
+        ]
+
     print(
-        f"Evaluating {len(episode_indices)} episodes "
+        f"Evaluating {len(work_items)} episodes "
         f"(worker={worker_id}/{num_workers}, requested_total={num_episodes}, "
-        f"assigned={len(episode_indices)})."
+        f"assigned={len(work_items)})."
     )
-    report("worker_init", total_episodes=len(episode_indices), status="creating_env")
+    report("worker_init", total_episodes=len(work_items), status="creating_env")
 
     setup_start_time = time.perf_counter()
     print(f"Creating environment: {env_id}")
@@ -260,7 +556,7 @@ def _run_eval_worker(
     setup_seconds = time.perf_counter() - setup_start_time
     report(
         "worker_init",
-        total_episodes=len(episode_indices),
+        total_episodes=len(work_items),
         status="ready",
         setup_seconds=setup_seconds,
     )
@@ -268,10 +564,37 @@ def _run_eval_worker(
     step_update_every = 5
     stats = defaultdict(bool)
 
-    for eps_idx in episode_indices:
-        # if eps_idx >= 1: break
-        env_conf, episode = get_episode(dataset, eps_idx)  # type: ignore[arg-type]
-        task_id = f"episode_{eps_idx}"
+    # The decoupled-WBC baselines drive the lower body through their own policy.
+    # A plain agent has none -- replay_policy, used by the smoke tests to stand
+    # in for a trained model, is a PrimitiveAgent. Reaching into a missing
+    # _wbc_policy is what made scripts/tests/check_eval_totes.sh unrunnable.
+    wbc_policy = getattr(agent, "_wbc_policy", None)
+
+    for task_id, src_path, eps_idx, prompt_mode, conditions in work_items:
+        if src_path is None:
+            env_conf, episode = get_episode(dataset, eps_idx)  # type: ignore[arg-type]
+            recorded_prompt = None
+        else:
+            env_conf, episode = get_episode(_dataset_for(src_path), eps_idx)
+            recorded_prompt = None
+            if prompt_mode == "recorded":
+                recorded_prompt = _prompts_for(src_path).get(eps_idx)
+            else:
+                # "task": rebuild the prompt from the eval task's own template
+                # instead of replaying the captured one. The language
+                # randomizer's state travels in dr_state_dict and would
+                # otherwise be restored verbatim (DRManager.load_state_dict
+                # resets only the randomizers absent from it), so a capture from
+                # an older task would keep imposing its old wording -- which is
+                # exactly what this mode exists to escape.
+                env_conf.get("dr_state_dict", {}).pop("language", None)
+
+            # Per-episode conditions ride in the state_dict, where the task
+            # reads them (see the mirror task's _resolve_episode_conditions).
+            # Written after the episode's own config so they override what was
+            # recorded, and before reset() so the task builds its prompt -- and
+            # scores -- against the command we actually issued.
+            env_conf.update(dict(conditions))
         report("episode_start", episode=task_id)
 
         if save_video:
@@ -288,11 +611,14 @@ def _run_eval_worker(
         observation, info = env.reset(options={"state_dict": env_conf})
 
         # engage RL policy immediately
-        agent._wbc_policy.lower_body_policy.use_policy_action = True
+        if wbc_policy is not None:
+            wbc_policy.lower_body_policy.use_policy_action = True
 
         # --- Wait for robot to stabilize (velocity-based) ---
+        # get_stabilize_action ramps the WBC pipeline to its default pose, so
+        # this phase only exists for agents that have one.
         sim_cnt = 0
-        while not robot.stabilized and sim_cnt < 300:
+        while wbc_policy is not None and not robot.stabilized and sim_cnt < 300:
             step_start = time.monotonic()
             action = agent.get_stabilize_action(observation)
             observation, *_, info = env.step(action)
@@ -308,14 +634,20 @@ def _run_eval_worker(
 
         frame_idx = 0
         episode_start_time = time.perf_counter()
-        instruction = task.instruction
+        # Prefer the prompt recorded with this episode; fall back to the one the
+        # task rebuilt during reset() above (which reflects the per-episode
+        # conditions replayed from the state_dict).
+        instruction = recorded_prompt or task.instruction
 
-        print(
-            f"Robot stabilized after {sim_cnt} simulation steps. Engaging Policy Now!"
-        )
-        agent._wbc_policy.lower_body_policy.gait_indices = torch.zeros(
-            (1), dtype=torch.float32
-        )
+        if wbc_policy is not None:
+            print(
+                f"Robot stabilized after {sim_cnt} simulation steps. "
+                "Engaging Policy Now!"
+            )
+        if wbc_policy is not None:
+            wbc_policy.lower_body_policy.gait_indices = torch.zeros(
+                (1), dtype=torch.float32
+            )
 
         if policy == "vlt":
             reset_kwargs = {
@@ -346,7 +678,9 @@ def _run_eval_worker(
         is_success = raw_env.unwrapped._success  # type: ignore[attr-defined]
         stats[task_id] = is_success
         episode_seconds = time.perf_counter() - episode_start_time
-        _append_eval_stats_line(eval_dir, f"{task_id}: {is_success} \n")
+        _append_eval_stats_line(
+            eval_dir, f"{task_id}: {is_success} | {instruction}\n"
+        )
         report(
             "episode_end",
             episode=task_id,
@@ -445,6 +779,7 @@ def run_eval(
         success_criteria=success_criteria,
         save_video=save_video,
         sonic_config=sonic_config,
+        episode_plan=config.episode_plan,
     )
 
     console.print(f"Writing eval logs to [bold]{log_path}[/bold]")
@@ -477,8 +812,6 @@ def run_eval(
                     )
             finally:
                 restore_cursor(console)
-                if terminal_stream is not None:
-                    terminal_stream.close()
         else:
             stats = _run_eval_worker(
                 **worker_kwargs,
@@ -544,8 +877,6 @@ def run_eval(
                             )
         finally:
             restore_cursor(console)
-            if terminal_stream is not None:
-                terminal_stream.close()
             for conn in progress_readers.values():
                 try:
                     conn.close()
@@ -627,6 +958,12 @@ def run_eval(
     console.print(f"Success rate {env_id} - {policy}: {sr:.2%}")
     console.print(f"Eval log: {log_path}")
 
+    # `console` writes to terminal_stream, so it can only be closed once the
+    # summary above is out -- closing it in the run's finally blocks made every
+    # single-worker eval die on this very print.
+    if terminal_stream is not None:
+        terminal_stream.close()
+
     _append_eval_stats_line(eval_dir, f"success rate: {sr:.2f} \n")
     return EvalResult(
         env_id=env_id,
@@ -656,6 +993,18 @@ def main(
     success_criteria: Annotated[float, typer.Option()] = 0.7,
     save_video: Annotated[bool, typer.Option("--save-video/--no-save-video")] = True,
     num_workers: Annotated[int, typer.Option()] = 1,
+    eval_config: Annotated[
+        str | None, typer.Option(help=(
+            "YAML listing the lerobot roots to sample eval episodes from, as "
+            "`datasets: [{name, path, prompt}]`. Use it instead of --data-dir "
+            "when the policy was trained on more than one dataset. Implies "
+            "--data-format lerobot; --num-episodes becomes the total across "
+            "datasets, split evenly between them."
+        ))
+    ] = None,
+    seed: Annotated[int, typer.Option(
+        help="Seed for --eval-config episode sampling. Same seed, same episodes."
+    )] = 0,
     isaac_background_usd: Annotated[
         str | None, typer.Option(help=(
             "USD path/URL referenced as a purely visual Isaac Sim backdrop "
@@ -668,6 +1017,24 @@ def main(
 ):
     if isaac_background_usd:
         os.environ["SIMPLE_ISAAC_BACKGROUND_USD"] = isaac_background_usd
+
+    episode_plan = None
+    if eval_config:
+        # data_dir keeps its default when unused; a changed value means the
+        # caller passed both and expects one of them to be honoured.
+        if data_dir != "data/datagen":
+            raise typer.BadParameter(
+                "--eval-config and --data-dir are mutually exclusive: the config "
+                "already lists every dataset to sample from."
+            )
+        if data_format != "lerobot":
+            print(
+                f"[eval-config] forcing --data-format lerobot (was {data_format})"
+            )
+            data_format = "lerobot"
+        episode_plan = _build_episode_plan(
+            _load_eval_datasets(eval_config), num_episodes, seed
+        )
 
     run_eval(
         EvalConfig(
@@ -688,6 +1055,8 @@ def main(
             save_video=save_video,
             num_workers=num_workers,
             isaac_background_usd=isaac_background_usd,
+            episode_plan=episode_plan,
+            seed=seed,
         )
     )
 

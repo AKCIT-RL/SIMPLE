@@ -34,6 +34,7 @@ from typing_extensions import Annotated, TYPE_CHECKING
 from tqdm import tqdm
 import tyro
 import simple.envs as _  # import all envs
+from simple.datasets.lerobot import _load_episode_prompts, _load_episode_tasks
 
 if TYPE_CHECKING:
     from simple.envs.sonic_loco_manip import SonicLocoManipEnv
@@ -72,28 +73,6 @@ def _load_episode_configs(data_dir: str):
             if ep_idx is not None and env_conf_str is not None:
                 configs[int(ep_idx)] = json.loads(env_conf_str)
     return configs
-
-
-def _load_episode_prompts(data_dir: str) -> dict[int, str]:
-    """Load the recorded language prompt of each episode from episodes.jsonl.
-
-    Tasks whose prompt varies per episode (sampled quantities, targets) must be
-    replayed with the prompt that was actually recorded; keying off tasks.jsonl
-    would collapse every episode onto one instruction.
-    """
-    meta_file = Path(data_dir) / "meta" / "episodes.jsonl"
-    if not meta_file.exists():
-        return {}
-
-    prompts: dict[int, str] = {}
-    with open(meta_file, "r") as f:
-        for line in f:
-            entry = json.loads(line)
-            ep_idx = entry.get("episode_index", None)
-            ep_tasks = entry.get("tasks", None)
-            if ep_idx is not None and ep_tasks:
-                prompts[int(ep_idx)] = ep_tasks[0]
-    return prompts
 
 
 def _init_replay_exporter(save_dir: str, fps: int, task_prompt: str, obj_names: list[str], joint_names: list[str]):
@@ -214,15 +193,6 @@ def _parse_episode_indices(spec: str) -> set[int]:
             indices.add(int(part))
     return indices
 
-
-def _load_episode_tasks(data_dir: str):
-    """Load task name per episode from meta/tasks.jsonl."""                                                                                                                        
-    tasks = {}                                                                                                 
-    with open(Path(data_dir) / "meta" / "tasks.jsonl", "r") as f:
-        for line in f:             
-            entry = json.loads(line)                                                                                                                                      
-            tasks[int(entry["task_index"])] = entry["task"]
-    return tasks
 
 def main(
     env_id: Annotated[str, typer.Argument()] = "simple/G1WholebodyBendPick-v1",

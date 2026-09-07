@@ -23,6 +23,14 @@ class EvalConfig:
     save_video: bool = True
     num_workers: int = 1
     isaac_background_usd: str | None = None
+    # Set by eval-decoupled-wbc's --eval-config: the exact (source_name,
+    # data_dir, episode_index) list this run evaluates, resolved once in the
+    # parent process so workers never re-derive the sampling. None keeps the
+    # single --data-dir behaviour.
+    episode_plan: (
+        tuple[tuple[str, str, int, str, tuple[tuple[str, Any], ...]], ...] | None
+    ) = None
+    seed: int = 0
 
 
 @dataclass

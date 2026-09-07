@@ -480,8 +480,17 @@ register(
     kwargs={"task":"g1_industrial_sorting_teleop"},
 )
 
+# psi0 aliases for the shelf-to-table totes family. One id per task: the
+# single-table original and the mirrored left/right variant. Keep them
+# distinct -- repointing an existing id at a different task makes every past
+# run under that id unreproducible.
 register(
     id="simple/G1PickUpToteFromShelfToDeskPsi0-v0",
+    entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
+    kwargs={"task":"g1_wholebody_locomotion_pick_totes_shelf_to_table_teleop"},
+)
+register(
+    id="simple/G1PickUpToteFromShelfToDeskMirrorPsi0-v0",
     entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
     kwargs={"task":"g1_wholebody_locomotion_pick_totes_shelf_to_table_mirror_teleop"},
 )
