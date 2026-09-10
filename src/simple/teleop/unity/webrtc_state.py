@@ -94,6 +94,17 @@ class UnityStateChannel:
     def is_open(self) -> bool:
         return self._channel.readyState == "open"
 
+    def set_scene_id(self, scene_id: int) -> None:
+        """Point the channel at a new scene without renegotiating.
+
+        The simulator can compile a new scene between episodes. Tearing down the
+        peer connection to match would drop the headset's session, so the id
+        carried by subsequent packets is swapped instead; a client that has not
+        reloaded the geometry sees the mismatch and can ignore the stream.
+        """
+        with self._lock:
+            self._scene_id = scene_id
+
     def publish(self, frame: int, positions, quaternions) -> bool:
         """Queue one frame of body poses. Returns True if it was handed off.
 
@@ -111,7 +122,9 @@ class UnityStateChannel:
                 self.dropped_backpressure += 1
             return False
 
-        packet = encode_state(frame, self._scene_id, positions, quaternions)
+        with self._lock:
+            scene_id = self._scene_id
+        packet = encode_state(frame, scene_id, positions, quaternions)
         self._loop.call_soon_threadsafe(self._send, packet)
         with self._lock:
             self.sent += 1
@@ -307,6 +320,13 @@ class UnityStateServer:
     @property
     def connected(self) -> bool:
         return self._state is not None and self._state.is_open
+
+    def set_scene_id(self, scene_id: int) -> None:
+        """Adopt a new scene id, for this connection and for any that follow."""
+        self._scene_id = scene_id
+        state = self._state
+        if state is not None:
+            state.set_scene_id(scene_id)
 
     def publish(self, frame: int, positions, quaternions) -> bool:
         """Publish one frame. No-op when Unity is not connected."""

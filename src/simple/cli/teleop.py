@@ -45,7 +45,12 @@ def main(
     ignore_target_collision: Annotated[bool, typer.Option()] = False,
     debug: Annotated[bool, typer.Option()] = False,
     easy_motion_gen: Annotated[bool, typer.Option()] = False,
-):  
+    unity: Annotated[bool, typer.Option()] = False,
+    unity_host: Annotated[str, typer.Option()] = "0.0.0.0",
+    unity_port: Annotated[int, typer.Option()] = 8765,
+    unity_export_dir: Annotated[str, typer.Option()] = "data/unity_scene",
+    unity_publish_hz: Annotated[float, typer.Option()] = 60.0,
+):
     assert sim_mode in ["mujoco"], f"Invalid sim_mode {sim_mode} for teleop."
     sim_cnt = 0
 
@@ -70,6 +75,31 @@ def main(
     agent = PicoSonicAgent(robot) # teleop g1 using sonic + pico
 
     observation, info = env.reset()
+
+    # Optional Unity frontend: renders the scene as real geometry in the
+    # headset instead of a video feed of Mujoco's own render. Independent of
+    # the agent above -- it only reads state, it never actuates.
+    #
+    # Built after the first reset on purpose: update_layout() compiles mjModel,
+    # and it is reset() that calls it, so there is no scene to export before
+    # this point.
+    unity_bridge = None
+    if unity:
+        from simple.teleop.unity.bridge import UnityRenderBridge
+
+        unity_bridge = UnityRenderBridge(
+            sonic_env.mujoco,
+            out_dir=unity_export_dir,
+            host=unity_host,
+            port=unity_port,
+            publish_hz=unity_publish_hz,
+        )
+        print(
+            f"[Unity] cena exportada em {unity_export_dir} "
+            f"(scene_id 0x{unity_bridge.scene_id:08x}); "
+            f"aguardando cliente em ws://{unity_host}:{unity_port}"
+        )
+
     try:
         # adapted from base_sim.start
         while (
@@ -88,6 +118,11 @@ def main(
                 agent._reset_requested = False
                 observation, info = env.reset()
                 sim_cnt = 0
+                if unity_bridge is not None:
+                    # Take the re-export hit here rather than mid-episode: a
+                    # reset can compile a new scene, and writing it out is not
+                    # instant.
+                    unity_bridge.resync()
                 print("[Teleop] Environment reset complete")
 
             if sim_cnt % int(robot.viewer_dt / robot.sim_dt) == 0:
@@ -99,6 +134,11 @@ def main(
             if sim_cnt % int(robot.image_dt / robot.sim_dt) == 0:
                 agent.update_render_caches(observation)
 
+            if unity_bridge is not None:
+                # Throttles internally to --unity-publish-hz, so it is cheap to
+                # call on every step regardless of the sim rate.
+                unity_bridge.tick()
+
             # Simple rate limiter (replaces ROS rate)
             elapsed = time.monotonic() - step_start
             sleep_time = robot.sim_dt - elapsed
@@ -109,6 +149,9 @@ def main(
     except KeyboardInterrupt:
         print("Simulator interrupted by user.")
     finally:
+        if unity_bridge is not None:
+            print(f"[Unity] {unity_bridge.stats()}")
+            unity_bridge.close()
         env.close()
         agent.close()
     
