@@ -41,6 +41,12 @@ lerobot = [
 active_perception = [
     "openai"
 ]
+# Unity as an XR frontend: scene export needs nothing beyond mujoco, but
+# streaming state to the headset goes over WebRTC.
+unity = [
+    "aiortc>=1.9",
+    "websockets>=12.0",
+]
 full = [
     "dm-env>=1.6",
     "envlogger[tfds]>=1.2",
