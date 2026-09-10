@@ -38,6 +38,7 @@ self-contained signaling server for the SIMPLE side.
 import asyncio
 import json
 import logging
+import re
 import threading
 
 from .protocol import encode_state
@@ -46,6 +47,57 @@ logger = logging.getLogger(__name__)
 
 STATE_CHANNEL_LABEL = "state"
 TRACKER_CHANNEL_LABEL = "tracker"
+
+# Largest state packet that crosses a Tailscale link in one piece.
+#
+# Tailscale's tun MTU is 1280 bytes. Subtracting IP (20), UDP (8), the DTLS
+# record with its GCM nonce and tag (~29), the SCTP common header (12) and the
+# DATA chunk header (16) leaves roughly 1195 bytes of payload.
+#
+# This matters more than usual here because the channel is configured with no
+# retransmits: SCTP delivers a fragmented message only if every fragment
+# arrives, so a packet split into k pieces is lost with probability
+# 1-(1-p)^k. Fragmenting quietly multiplies the drop rate the unreliable
+# channel was chosen to keep low.
+SAFE_PAYLOAD_BYTES = 1195
+
+_CANDIDATE_HOST_RE = re.compile(r"^(a=candidate:[^ ]+ \d+ \w+ \d+ )([^ ]+)( .*)$")
+
+
+def is_routable_candidate(address: str) -> bool:
+    """False for candidates a remote peer can never reach.
+
+    Link-local addresses are per-interface and meaningless across a link;
+    advertising them just adds ICE pairs that are guaranteed to fail and delays
+    the connection while they time out.
+    """
+    if not address:
+        return False
+    if address.startswith("169.254."):
+        return False
+    return not address.lower().startswith(("fe80:", "fc00:", "fd00:"))
+
+
+def rewrite_host_candidates(sdp: str, host: str) -> str:
+    """Replace the address of every host candidate in ``sdp`` with ``host``.
+
+    On a machine with several interfaces -- a physical NIC, a Tailscale tun,
+    maybe a docker bridge -- aiortc advertises a host candidate for each, and
+    the headset may spend its connection attempt on one that is unreachable
+    from its side of the tailnet. Pinning the address it should use avoids the
+    guesswork.
+    """
+    if not host:
+        return sdp
+    lines = []
+    for line in sdp.splitlines():
+        if line.startswith("a=candidate:") and " typ host " in line:
+            match = _CANDIDATE_HOST_RE.match(line)
+            if match:
+                line = f"{match.group(1)}{host}{match.group(3)}"
+        lines.append(line)
+    return "\r\n".join(lines) + "\r\n"
+
 
 # Above this many bytes queued on the channel, the link is not keeping up.
 # Dropping the current frame is the right response: the next one is a better
@@ -75,6 +127,8 @@ class UnityStateChannel:
         self.sent = 0
         self.dropped_backpressure = 0
         self.dropped_closed = 0
+
+        self._warned_fragmentation = False
 
         self._channel = pc.createDataChannel(label, ordered=False, maxRetransmits=0)
 
@@ -125,6 +179,19 @@ class UnityStateChannel:
         with self._lock:
             scene_id = self._scene_id
         packet = encode_state(frame, scene_id, positions, quaternions)
+
+        if len(packet) > SAFE_PAYLOAD_BYTES and not self._warned_fragmentation:
+            self._warned_fragmentation = True
+            logger.warning(
+                "state packet is %d bytes for %d bodies, above the ~%d that fits "
+                "one 1280-byte MTU (Tailscale, most VPNs). SCTP will fragment it, "
+                "and with no retransmits a message survives only if every "
+                "fragment does -- expect the drop rate to rise with body count.",
+                len(packet),
+                len(positions),
+                SAFE_PAYLOAD_BYTES,
+            )
+
         self._loop.call_soon_threadsafe(self._send, packet)
         with self._lock:
             self.sent += 1
@@ -169,6 +236,7 @@ class UnityStateServer:
         on_tracker=None,
         ice_servers=None,
         buffer_limit: int = DEFAULT_BUFFER_LIMIT,
+        ice_host: str | None = None,
     ) -> None:
         self._scene_id = scene_id
         self._host = host
@@ -176,6 +244,7 @@ class UnityStateServer:
         self._on_tracker = on_tracker
         self._ice_servers = ice_servers or ["stun:stun.l.google.com:19302"]
         self._buffer_limit = buffer_limit
+        self._ice_host = ice_host
 
         self._state: UnityStateChannel | None = None
         self._pcs = set()
@@ -274,19 +343,22 @@ class UnityStateServer:
                     await pc.setLocalDescription(await pc.createAnswer())
                     while pc.iceGatheringState != "complete":
                         await asyncio.sleep(0.1)
+
+                    sdp = pc.localDescription.sdp
+                    if self._ice_host:
+                        sdp = rewrite_host_candidates(sdp, self._ice_host)
+                        logger.info("pinned host candidates to %s", self._ice_host)
+
                     await websocket.send(
-                        json.dumps(
-                            {
-                                "type": pc.localDescription.type,
-                                "sdp": pc.localDescription.sdp,
-                            }
-                        )
+                        json.dumps({"type": pc.localDescription.type, "sdp": sdp})
                     )
 
                 elif kind == "candidate":
                     candidate = self._parse_candidate(data)
                     if candidate is None:
                         await pc.addIceCandidate(None)
+                    elif not is_routable_candidate(candidate.ip):
+                        logger.debug("ignoring unroutable candidate %s", candidate.ip)
                     elif remote_set:
                         await pc.addIceCandidate(candidate)
                     else:

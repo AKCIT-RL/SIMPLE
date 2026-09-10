@@ -61,6 +61,10 @@ class UnityRenderBridge:
             starting one. Lets the bridge share a peer connection with a
             signaling server that also carries video.
         include_collision: export collision geometry too, for debugging.
+        ice_host: address to advertise for ICE, e.g. this machine's Tailscale
+            address. On a multi-homed host aiortc offers a candidate per
+            interface and the headset can spend its connection attempt on one
+            it cannot reach.
     """
 
     def __init__(
@@ -73,6 +77,7 @@ class UnityRenderBridge:
         on_tracker=None,
         server=None,
         include_collision: bool = False,
+        ice_host: str | None = None,
     ) -> None:
         self._sim = simulator
         self._out_dir = out_dir
@@ -95,6 +100,7 @@ class UnityRenderBridge:
                 host=host,
                 port=port,
                 on_tracker=on_tracker,
+                ice_host=ice_host,
             )
         else:
             self._server = server

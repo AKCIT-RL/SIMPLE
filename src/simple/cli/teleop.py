@@ -50,6 +50,7 @@ def main(
     unity_port: Annotated[int, typer.Option()] = 8765,
     unity_export_dir: Annotated[str, typer.Option()] = "data/unity_scene",
     unity_publish_hz: Annotated[float, typer.Option()] = 60.0,
+    unity_ice_host: Annotated[str, typer.Option()] = "",
 ):
     assert sim_mode in ["mujoco"], f"Invalid sim_mode {sim_mode} for teleop."
     sim_cnt = 0
@@ -93,6 +94,7 @@ def main(
             host=unity_host,
             port=unity_port,
             publish_hz=unity_publish_hz,
+            ice_host=unity_ice_host or None,
         )
         print(
             f"[Unity] cena exportada em {unity_export_dir} "

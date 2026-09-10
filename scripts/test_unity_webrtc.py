@@ -44,7 +44,12 @@ from aiortc import RTCPeerConnection, RTCSessionDescription
 
 from simple.teleop.unity import protocol
 from simple.teleop.unity.scene_export import export_scene, world_poses
-from simple.teleop.unity.webrtc_state import UnityStateServer
+from simple.teleop.unity.webrtc_state import (
+    SAFE_PAYLOAD_BYTES,
+    UnityStateServer,
+    is_routable_candidate,
+    rewrite_host_candidates,
+)
 
 DEFAULT_MJCF = r"C:\Users\muril\Teleop6\Assets\Mujoco Unitree g1\scene.xml"
 
@@ -154,8 +159,54 @@ def test_candidate_parsing() -> None:
     )
 
 
+def test_ice_helpers() -> None:
+    """Multi-homed hosts and VPN links, which loopback cannot reproduce."""
+    print("\n[0b] Ajustes de ICE para link Tailscale/VPN")
+
+    # A multi-homed host as aiortc would describe it: LAN NIC, docker bridge,
+    # and a reflexive candidate that must survive the rewrite untouched.
+    sdp_lines = [
+        "v=0",
+        "a=candidate:1 1 udp 2130706431 192.168.1.10 5000 typ host generation 0",
+        "a=candidate:2 1 udp 2130706431 172.17.0.1 5001 typ host generation 0",
+        (
+            "a=candidate:3 1 udp 1694498815 203.0.113.7 5002 typ srflx "
+            "raddr 192.168.1.10 rport 5000"
+        ),
+        "a=mid:0",
+    ]
+    sdp = "\r\n".join(sdp_lines)
+    out = rewrite_host_candidates(sdp, "100.118.137.125")
+    check(
+        "todos os candidates host viram o IP do Tailscale",
+        out.count("100.118.137.125") == 2,
+        f"{out.count('100.118.137.125')} de 2",
+    )
+    check("candidate srflx intocado", "203.0.113.7 5002 typ srflx" in out)
+    check("linhas nao-candidate intocadas", "a=mid:0" in out and "v=0" in out)
+    check("sem ice_host o SDP passa igual", rewrite_host_candidates(sdp, "") == sdp)
+
+    check("link-local IPv4 descartado", not is_routable_candidate("169.254.3.4"))
+    check("link-local IPv6 descartado", not is_routable_candidate("fe80::1"))
+    check("IP do Tailscale aceito", is_routable_candidate("100.118.137.125"))
+    check("IP de LAN aceito", is_routable_candidate("192.168.1.10"))
+
+    # 31 bodies fit one 1280-byte MTU; a scene with objects may not.
+    fits = protocol.packet_size(31)
+    check(
+        "pacote do G1 cabe em uma MTU de VPN",
+        fits <= SAFE_PAYLOAD_BYTES,
+        f"{fits} <= {SAFE_PAYLOAD_BYTES} bytes",
+    )
+    limit = next(
+        n for n in range(1, 500) if protocol.packet_size(n) > SAFE_PAYLOAD_BYTES
+    )
+    print(f"         fragmenta a partir de {limit} bodies")
+
+
 async def run_test(args) -> int:
     test_candidate_parsing()
+    test_ice_helpers()
 
     model = mujoco.MjSpec.from_file(args.mjcf).compile()
     data = mujoco.MjData(model)
