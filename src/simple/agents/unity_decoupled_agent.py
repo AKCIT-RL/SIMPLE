@@ -30,8 +30,8 @@ draws the scene itself, which is the entire point of this path. That removes
 the per-step ``cv2.resize``, the video buffer, and the coupling between the
 operator's viewpoint and the simulator's frame rate.
 
-Why the device name is "unity" and not "vuer"
----------------------------------------------
+Why the wrist alignment is computed, not named
+----------------------------------------------
 ``TeleopStreamer`` recognises neither, which is what both agents want: an
 unrecognised name leaves ``body_streamer`` as None, so nothing is built for us
 to fight with and no ``DummyStreamer`` drags in ROS 2. That much they share.
@@ -45,18 +45,22 @@ routed through the operator's wrist orientation, and only comes out pointing
 the right way if that orientation matches the robot's hand frame.
 
 The names "pico" and "vuer" assert exactly that match, and the preprocessor
-applies no correction for them. Any other name makes it apply one, per arm:
-``hand_rotation_correction`` on the left and the same composed with a half turn
-about Z on the right.
+applies no correction for them. Any other name makes it apply a hardcoded pair
+instead -- but that pair is an assertion about a different headset, so it is
+another guess rather than an answer. Unity reports ``XRNode`` device poses,
+matching neither.
 
 The asymmetry is the tell. The G1's two hand frames are mirror images of each
-other, so one wrong wrist convention -- identical on both hands -- produces a
-different error on each arm. Raising both hands lifting one arm and dropping
-the other is that signature, and it is why "unity" is the right name here:
-Unity reports ``XRNode`` device poses, not the WebXR grip poses TeleVuer
-delivers, so the match "vuer" asserts does not hold.
+other, so one wrong wrist convention -- identical on both hands -- lands
+differently on each arm, and no single constant can be right for both.
 
-Pass ``wrist_correction=False`` to fall back to "vuer" and compare.
+So this agent computes the alignment rather than naming it. Both matrices it
+needs are already stored by ``calibrate()``, and ``wrist_alignment`` derives
+the one rotation that makes each arm follow the operator's hand 1:1; see that
+module for the derivation. The device name stays "vuer", leaving the
+preprocessor's own choice at identity so nothing has to be undone.
+
+Pass ``wrist_correction=False`` to skip the alignment and compare.
 """
 
 from __future__ import annotations
@@ -68,6 +72,7 @@ from simple.teleop.unity.streamer import (
     UnityTrackerSource,
     attach_unity_streamer,
 )
+from simple.teleop.unity.wrist_alignment import align_wrist_frames
 
 
 class UnityDecoupledAgent(VuerDecoupledAgent):
@@ -81,19 +86,15 @@ class UnityDecoupledAgent(VuerDecoupledAgent):
             WebRTC or anything else that can deliver those messages.
     """
 
-    TELEOP_DEVICE = "unity"
-
     def __init__(
         self,
         robot: G1Sonic,
         source: UnityTrackerSource,
         wrist_correction: bool = True,
     ) -> None:
-        # Which calibration branch WristsPreProcessor takes. Exposed because
-        # this is an empirical question settled by watching a robot, and the
-        # comparison is expensive to set up: it needs a headset, so being able
-        # to flip it without an edit is worth the one argument.
-        self.TELEOP_DEVICE = "unity" if wrist_correction else "vuer"
+        # Exposed because confirming it needs a headset and a robot, and an
+        # edit-and-rebuild per comparison is a poor trade for one argument.
+        self._wrist_correction = wrist_correction
 
         self._unity_source = source
         self._buttons = UnityButtonPoller(source)
@@ -106,6 +107,33 @@ class UnityDecoupledAgent(VuerDecoupledAgent):
 
         self._unity_streamer = attach_unity_streamer(self._teleop_policy, source)
         print("[UnityDecoupled] UnityStreamer injected into TeleopStreamer.")
+
+        if wrist_correction:
+            self._install_wrist_alignment()
+
+    # -- wrist frames -----------------------------------------------------
+
+    def _install_wrist_alignment(self) -> None:
+        """Solve the alignment each time the operator calibrates.
+
+        Wrapping ``calibrate`` rather than calling ``align_wrist_frames`` once
+        here, because the alignment depends on where the operator's hands were
+        when they pressed the button -- so it has to be recomputed on every
+        activation, not fixed at startup.
+        """
+        streamer = self._teleop_policy.teleop_streamer
+        calibrate = streamer.calibrate
+
+        def calibrate_and_align():
+            calibrate()
+            pre_processor = streamer.body_pre_processor
+            if pre_processor is None:
+                return
+            aligned = align_wrist_frames(pre_processor)
+            for ee_name in aligned:
+                print(f"[UnityDecoupled] Wrist frame aligned for {ee_name}.")
+
+        streamer.calibrate = calibrate_and_align
 
     # -- input ------------------------------------------------------------
 
