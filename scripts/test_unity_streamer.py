@@ -33,6 +33,7 @@ sys.path.insert(
 
 from simple.teleop.unity.streamer import (
     REST_LEFT_WRIST,
+    UnityButtonPoller,
     UnityStreamerCore,
     UnityTrackerSource,
     apply_dead_zone,
@@ -395,6 +396,43 @@ def test_finger_encoding() -> None:
     )
 
 
+def test_button_poller() -> None:
+    """Drop and reset belong to the simulator, not to the controller.
+
+    They are kept out of the streamer on purpose: the teleop policy has no
+    business knowing an elastic band exists. Both are edge-triggered, since at
+    50 Hz a level-triggered reset fires fifty times while the operator's hands
+    are still closing.
+    """
+    print("\n[8] Botoes de nivel de simulacao")
+    source = UnityTrackerSource()
+    poller = UnityButtonPoller(source)
+
+    source.feed(tracker_message(leftGrip=1.0, rightGrip=1.0))
+    check("ambos os grips pedem reset", poller.poll()["reset"] is True)
+    held = [poller.poll()["reset"] for _ in range(20)]
+    check("segurar nao repete o reset", not any(held), f"{sum(held)} repeticoes")
+
+    check("pedido pendente e consumido uma vez", poller.take_reset_request() is True)
+    check("segunda leitura ja vem vazia", poller.take_reset_request() is False)
+
+    source.feed(tracker_message(leftGrip=0.0, rightGrip=0.0))
+    poller.poll()
+    source.feed(tracker_message(leftGrip=1.0, rightGrip=1.0))
+    check("soltar e apertar pede de novo", poller.poll()["reset"] is True)
+
+    # One grip alone is the data-abort binding; it must not reset the episode.
+    poller.reset_status()
+    source.feed(tracker_message(leftGrip=1.0, rightGrip=0.0))
+    check("um grip sozinho nao reseta", poller.poll()["reset"] is False)
+
+    poller.reset_status()
+    source.feed(tracker_message(leftPrimary=True, rightPrimary=True))
+    check("os dois A pedem drop", poller.poll()["drop"] is True)
+    check("drop e consumido uma vez", poller.take_drop_request() is True)
+    check("drop nao repete", poller.take_drop_request() is False)
+
+
 def test_defaults_before_any_input() -> None:
     """Before Unity connects the controller still reads a plausible posture."""
     print("\n[7] Estado antes de qualquer mensagem")
@@ -428,6 +466,7 @@ def main() -> int:
     test_navigation_and_height()
     test_edge_triggered_toggles()
     test_finger_encoding()
+    test_button_poller()
     test_defaults_before_any_input()
 
     print("\nTodos os testes passaram." if not failures else f"\n{failures} FALHA(S).")

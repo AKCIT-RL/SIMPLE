@@ -502,3 +502,97 @@ def make_unity_streamer(source: UnityTrackerSource):
             return StreamerOutput(**self._core.poll())
 
     return UnityStreamer(source)
+
+
+class UnityButtonPoller:
+    """Edge-detect the buttons SIMPLE handles rather than the controller.
+
+    Dropping the elastic band and resetting the environment are simulator
+    concerns, not teleoperation ones, so they stay out of the streamer: the
+    policy has no business knowing an elastic band exists. ``PicoDecoupledAgent``
+    and ``VuerDecoupledAgent`` both keep them at agent level for the same
+    reason, and this mirrors their bindings.
+
+    Bindings, matching VuerDecoupledAgent:
+        drop robot   right thumbstick click
+        reset env    both grips held together
+
+    Both are edge-triggered. At 50 Hz a level-triggered reset would fire fifty
+    times while the operator's hands are still closing.
+    """
+
+    def __init__(self, source: UnityTrackerSource, grip_threshold: float = 0.5) -> None:
+        self._source = source
+        self._grip_threshold = grip_threshold
+        self._drop_last = False
+        self._reset_last = False
+        self.drop_requested = False
+        self.reset_requested = False
+
+    def poll(self) -> dict:
+        """Read the buttons once. Returns the edges seen this call."""
+        data = self._source.snapshot()
+
+        # The thumbstick click is not in TrackerSender's payload yet; falling
+        # back to both A buttons keeps this usable until it is.
+        drop_now = bool(data.left_ctrl_aButton and data.right_ctrl_aButton)
+        drop_edge = drop_now and not self._drop_last
+        self._drop_last = drop_now
+
+        reset_now = (
+            data.left_ctrl_squeezeValue > self._grip_threshold
+            and data.right_ctrl_squeezeValue > self._grip_threshold
+        )
+        reset_edge = reset_now and not self._reset_last
+        self._reset_last = reset_now
+
+        self.drop_requested = self.drop_requested or drop_edge
+        self.reset_requested = self.reset_requested or reset_edge
+        return {"drop": drop_edge, "reset": reset_edge}
+
+    def take_reset_request(self) -> bool:
+        """Consume a pending reset. True at most once per press.
+
+        The sim loop calls this where it would check ``agent.reset_requested``;
+        clearing on read keeps a single press from resetting twice.
+        """
+        pending, self.reset_requested = self.reset_requested, False
+        return pending
+
+    def take_drop_request(self) -> bool:
+        """Consume a pending drop, on the same read-and-clear contract."""
+        pending, self.drop_requested = self.drop_requested, False
+        return pending
+
+    def reset_status(self) -> None:
+        self._drop_last = False
+        self._reset_last = False
+        self.drop_requested = False
+        self.reset_requested = False
+
+
+def attach_unity_streamer(teleop_policy, source: UnityTrackerSource):
+    """Point an existing ``TeleopPolicy`` at Unity's input.
+
+    ``TeleopStreamer`` leaves ``body_streamer`` as None for a device name it
+    does not recognise, which is the hook both PicoDecoupledAgent and
+    VuerDecoupledAgent use: construct the policy with an unknown device, then
+    assign the streamer over the top. Passing "unity" also avoids
+    ``DummyStreamer``, which pulls in ROS 2.
+
+    Hands and body share one streamer because one pair of controllers reports
+    both, exactly as the Vuer path does.
+
+    Args:
+        teleop_policy: a ``TeleopPolicy`` built with
+            ``body_control_device="unity"`` and ``hand_control_device="unity"``.
+        source: the ``UnityTrackerSource`` the WebRTC channel feeds.
+
+    Returns:
+        The streamer that was attached, for ``reset_status()`` on episode reset.
+    """
+    streamer = make_unity_streamer(source)
+    streamer.start_streaming()
+    teleop_policy.teleop_streamer.body_streamer = streamer
+    teleop_policy.teleop_streamer.hand_streamer = streamer
+    return streamer
