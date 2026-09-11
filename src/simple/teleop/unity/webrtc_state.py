@@ -100,6 +100,40 @@ def is_routable_candidate(address: str) -> bool:
     return not address.lower().startswith(("fe80:", "fc00:", "fd00:"))
 
 
+def _require_webrtc_dependencies() -> None:
+    """Fail at startup if the optional WebRTC dependencies are missing.
+
+    aiortc is only needed when --unity is passed, so it lives in the ``unity``
+    extra and is imported lazily. Importing it inside the connection handler,
+    though, defers the failure to the worst possible moment: the server binds
+    the port, reports itself ready, and only dies when a client arrives --
+    reaching that client as close code 1011 with the cause on neither side.
+
+    Checking here means a missing install is reported once, at startup, by the
+    process that can still do something about it.
+    """
+    missing = []
+    for module, package in (
+        ("aiortc", "aiortc>=1.9"),
+        ("websockets", "websockets>=12.0"),
+    ):
+        try:
+            __import__(module)
+        except ImportError:
+            missing.append(package)
+
+    if missing:
+        raise RuntimeError(
+            "Unity state streaming needs "
+            + " and ".join(missing)
+            + ", which are not installed. They sit in the optional 'unity' "
+            "extra:\n"
+            "    uv pip install " + " ".join(f'"{p}"' for p in missing) + "\n"
+            "or install the whole extra with:\n"
+            "    uv pip install -e '.[unity]'"
+        )
+
+
 def rewrite_host_candidates(sdp: str, host: str) -> str:
     """Replace the address of every host candidate in ``sdp`` with ``host``.
 
@@ -263,6 +297,7 @@ class UnityStateServer:
     ) -> None:
         if verbose:
             ensure_console_logging()
+        _require_webrtc_dependencies()
         self._scene_id = scene_id
         self._host = host
         self._port = port
