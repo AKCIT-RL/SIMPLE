@@ -33,13 +33,17 @@ operator's viewpoint and the simulator's frame rate.
 The device name stays "vuer"
 ----------------------------
 ``TeleopPolicy`` is constructed by the inherited method with
-``body_control_device="vuer"``, and that is left alone deliberately.
-``WristsPreProcessor`` mirrors the right wrist's Z for any device outside its
-allowlist, and the name selects a wrist convention rather than a piece of
-hardware. Unity's controllers report OpenXR grip poses, the same convention
-TeleVuer delivers, so "vuer" selects the correct handling. Renaming it to
-"unity" without adding that string to the allowlist would reflect the right arm
-alone -- a failure that looks like broken IK rather than a wrong frame.
+``body_control_device="vuer"``, and that is left alone deliberately. The string
+is not a piece of hardware: ``TeleopStreamer`` does not recognise it, which is
+the whole point -- an unrecognised name leaves ``body_streamer`` as None, so no
+streamer is built for us to fight with and no ``DummyStreamer`` drags in ROS 2.
+The Vuer agent picked it for that reason and this agent inherits the trick.
+
+Keeping the same string also keeps whatever the name selects downstream
+identical between the two paths, so Unity's wrists are handled exactly as
+TeleVuer's are. Since ``UnityTrackerSource`` already delivers wrists in
+TeleVuer's convention, that is the behaviour we want; changing the name here
+would change it for reasons unrelated to Unity.
 """
 
 from __future__ import annotations

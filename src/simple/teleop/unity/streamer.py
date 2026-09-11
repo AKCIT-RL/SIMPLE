@@ -18,17 +18,18 @@ what the controller wants takes two more steps, and they are separable:
 in xr_teleoperate, where it drives a real G1. It is arithmetic, and the tests
 cover it.
 
-``headset_relative_wrist`` is the part to distrust. TeleVuer hands
-``WristsPreProcessor`` a wrist pose that is z-up, headset-relative and
-yaw-compensated, and the implementation lives in the televuer package rather
-than here. What follows reproduces that description rather than that code, so
-treat the wrist convention as unverified until it has moved a robot: a wrong
-basis here produces arms that track smoothly and point somewhere else, which
-reads as an IK problem rather than a frame problem.
+``headset_relative_wrist`` then ``to_waist_origin`` place that pose on the
+origin the IK actually solves about. Both are translations and both are
+required: the headset reports where the operator's head is, the solver wants a
+frame near the robot's waist, and the gap between them is the robot's own
+build. ``TeleVuerWrapper`` applies exactly this pair, and so does the
+xr_teleoperate bridge that drives a real G1.
 
-Also note ``WristsPreProcessor`` mirrors the right wrist's Z for any device not
-named in its allowlist. "unity" has to be added there, alongside "pico" and
-"vuer", or the right arm alone comes out reflected.
+Getting these wrong does not look like a frame error. The target lands outside
+the arm's reach, the IK returns the least-bad pose it can find, and the arm
+tracks the hand loosely while pointing somewhere else -- which reads as an
+inverted axis or broken IK. Before concluding that an axis is flipped, check
+that the target is reachable at all.
 """
 
 import json
@@ -57,6 +58,22 @@ T_OPENXR_ROBOT = np.array(
     ],
     dtype=np.float64,
 )
+
+# Head to waist, in the robot frame. The IK solves in a frame whose origin sits
+# near the waist joint, but a headset only knows where the head is, so the
+# head-relative wrist has to be walked down to that origin before it means
+# anything to the solver.
+#
+# These are the numbers TeleVuerWrapper applies and that the xr_teleoperate
+# bridge reproduces to drive a real G1; they are a property of the G1's
+# geometry, not of any headset, which is why both paths carry the same pair.
+#
+# Leaving them out does not tilt the arm, it puts the target roughly at the
+# robot's knees and behind it -- outside the arm's reach -- and an IK asked for
+# an unreachable pose returns whatever is least bad. The result tracks the hand
+# loosely and points somewhere else entirely, which is easy to misread as an
+# inverted axis.
+WAIST_FROM_HEAD = np.array([0.15, 0.0, 0.45], dtype=np.float64)
 
 # Poses to hold when Unity has sent nothing yet, so the controller reads a
 # plausible standing posture instead of a stack of identity matrices at the
@@ -148,6 +165,19 @@ def headset_relative_wrist(wrist: np.ndarray, head: np.ndarray) -> np.ndarray:
     relative = wrist.copy()
     relative[0:3, 3] -= head[0:3, 3]
     return relative
+
+
+def to_waist_origin(wrist: np.ndarray) -> np.ndarray:
+    """Re-origin a head-relative wrist onto the frame the IK solves in.
+
+    Kept separate from ``headset_relative_wrist`` because the two answer
+    different questions: that one removes the operator's head, this one accounts
+    for the robot's build. Only the second changes if the arm is mounted on a
+    different torso.
+    """
+    shifted = wrist.copy()
+    shifted[0:3, 3] += WAIST_FROM_HEAD
+    return shifted
 
 
 @dataclass
@@ -293,19 +323,22 @@ class UnityTrackerSource:
             )
 
     def wrist_poses(self):
-        """Both wrists in the robot frame, relative to the head."""
+        """Both wrists in the robot frame, on the origin the IK solves in.
+
+        Four steps, in this order: move the origin along the controller, change
+        basis, subtract the head, then walk down to the waist. The grip offset
+        has to come first, while the pose is still in the controller's own
+        frame; the last two are translations and commute with each other, but
+        neither commutes with the basis change.
+        """
         data = self.snapshot()
         head = to_robot_frame(data.head_pose)
-        # Offset first, while the pose is still in the controller's own frame.
-        left = headset_relative_wrist(
-            to_robot_frame(apply_grip_offset(data.left_wrist_pose, self.grip_offset)),
-            head,
-        )
-        right = headset_relative_wrist(
-            to_robot_frame(apply_grip_offset(data.right_wrist_pose, self.grip_offset)),
-            head,
-        )
-        return left, right
+
+        def wrist(raw):
+            robot_frame = to_robot_frame(apply_grip_offset(raw, self.grip_offset))
+            return to_waist_origin(headset_relative_wrist(robot_frame, head))
+
+        return wrist(data.left_wrist_pose), wrist(data.right_wrist_pose)
 
     def stats(self) -> dict:
         with self._lock:

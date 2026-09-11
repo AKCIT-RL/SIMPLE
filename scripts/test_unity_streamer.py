@@ -43,6 +43,7 @@ from simple.teleop.unity.streamer import (
     is_usable_pose,
     matrix_from_payload,
     to_robot_frame,
+    to_waist_origin,
 )
 
 failures = 0
@@ -158,6 +159,56 @@ def test_frame_change() -> None:
         str(rel[0:3, 3]),
     )
     check("rotacao do pulso preservada", np.allclose(rel[0:3, 0:3], wrist[0:3, 0:3]))
+
+    shifted = to_waist_origin(rel)
+    check(
+        "origem desce da cabeca para a cintura",
+        np.allclose(shifted[0:3, 3], rel[0:3, 3] + [0.15, 0.0, 0.45]),
+        str(shifted[0:3, 3]),
+    )
+    check(
+        "rotacao sobrevive a mudanca de origem",
+        np.allclose(shifted[0:3, 0:3], rel[0:3, 0:3]),
+    )
+
+    # The check that matters: an operator standing with hands at chest height
+    # must produce a target the arm can actually reach. Pure algebra passes
+    # whether or not the waist offset is applied -- only a reachability bound
+    # notices that the target sits down by the knees.
+    #
+    # OpenXR is y-up and z-back, so this is a head at 1.5 m and wrists 40 cm
+    # lower, 15 cm to each side, 30 cm in front.
+    source = UnityTrackerSource()
+    source.feed(
+        tracker_message(
+            head=pose(0.0, 1.5, 0.0),
+            left=pose(-0.15, 1.10, -0.30),
+            right=pose(0.15, 1.10, -0.30),
+        )
+    )
+    left, right = source.wrist_poses()
+    for side, target in (("esquerdo", left), ("direito", right)):
+        x, y, z = target[0:3, 3]
+        check(
+            f"pulso {side} fica a frente do tronco",
+            0.0 < x < 0.6,
+            f"x = {x:.3f}",
+        )
+        check(
+            f"pulso {side} fica na altura do tronco",
+            -0.1 < z < 0.5,
+            f"z = {z:.3f}",
+        )
+        check(
+            f"pulso {side} fica ao alcance do ombro",
+            np.linalg.norm([x, y, z]) < 0.75,
+            f"distancia {np.linalg.norm([x, y, z]):.3f} m",
+        )
+    check(
+        "lados nao trocam",
+        left[1, 3] > 0.0 > right[1, 3],
+        f"y esq {left[1, 3]:.3f}, y dir {right[1, 3]:.3f}",
+    )
 
 
 def test_grip_offset() -> None:
