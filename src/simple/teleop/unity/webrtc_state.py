@@ -294,7 +294,8 @@ class UnityStateServer:
     async def _serve(self) -> None:
         import websockets
 
-        async with websockets.serve(self._handle_signaling, self._host, self._port):
+        logger.info("websockets %s", getattr(websockets, "__version__", "unknown"))
+        async with websockets.serve(self._signaling_entry, self._host, self._port):
             logger.info("Unity signaling on ws://%s:%d", self._host, self._port)
             self._ready.set()
             while not self._stop.is_set():
@@ -310,6 +311,25 @@ class UnityStateServer:
             self._thread.join(timeout=2.0)
 
     # -- signaling ---------------------------------------------------------
+
+    async def _signaling_entry(self, websocket, path=None) -> None:
+        """Entry point websockets calls, wrapping the session.
+
+        ``path`` exists only for compatibility. Up to websockets 13 the server
+        called handlers as ``handler(websocket, path)``; from 14 it passes the
+        connection alone. This package allows websockets >= 12, so a handler
+        taking one argument raises TypeError under the older releases.
+
+        The try/except is what makes that kind of failure findable. websockets
+        reports a crashed handler to the client as a bare close code 1011 and
+        logs the cause on its own logger, which nothing here configures -- so
+        the session dies with the reason visible on neither side.
+        """
+        try:
+            await self._handle_signaling(websocket)
+        except Exception:
+            logger.exception("signaling handler crashed")
+            raise
 
     async def _handle_signaling(self, websocket) -> None:
         from aiortc import (
