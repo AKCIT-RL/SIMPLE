@@ -65,6 +65,9 @@ class UnityRenderBridge:
             address. On a multi-homed host aiortc offers a candidate per
             interface and the headset can spend its connection attempt on one
             it cannot reach.
+        channel_ordered, channel_max_retransmits: SCTP delivery settings for the
+            state channel. The defaults match the only combination Unity's
+            WebRTC was observed to deliver; see ``webrtc_state``.
     """
 
     def __init__(
@@ -78,6 +81,8 @@ class UnityRenderBridge:
         server=None,
         include_collision: bool = False,
         ice_host: str | None = None,
+        channel_ordered: bool = True,
+        channel_max_retransmits: int | None = None,
     ) -> None:
         self._sim = simulator
         self._out_dir = out_dir
@@ -101,6 +106,8 @@ class UnityRenderBridge:
                 port=port,
                 on_tracker=on_tracker,
                 ice_host=ice_host,
+                channel_ordered=channel_ordered,
+                channel_max_retransmits=channel_max_retransmits,
             )
         else:
             self._server = server

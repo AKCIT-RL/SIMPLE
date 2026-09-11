@@ -1,36 +1,39 @@
 """
-Stream scene state to Unity over an unreliable WebRTC data channel.
+Stream scene state to Unity over a WebRTC data channel.
 
 Pose state is disposable: every frame supersedes the one before it, so a packet
-that goes missing costs nothing as long as the next one arrives on time. An
-ordered channel gets that backwards -- one lost packet stalls everything behind
-it while SCTP retransmits, and the operator sees the scene freeze and then jump.
-So the channel is always **unordered**.
+that goes missing costs nothing as long as the next one arrives on time. That
+argues for an unordered, unreliable channel, and the first two versions of this
+module were built on it. Both failed against the peer that matters.
 
-Reliability is a separate axis, and the first version got it wrong. It also set
-``maxRetransmits=0``, reasoning that a dropped frame is free. That holds only
-while a message fits inside one MTU. Above it SCTP fragments, and an
-unreliable fragmented message survives only if every fragment does -- against a
-libwebrtc peer across a 1280-byte Tailscale link, none did: the channel opened,
-both ends agreed on the settings, and nothing above the MTU ever arrived. A
-20-byte probe landed; a 1395-byte one did not.
+What the peer actually accepts, measured rather than reasoned about:
 
-The default is therefore unordered and reliable. Head-of-line blocking, the
-thing worth avoiding, comes from ordering rather than from retransmission: an
-unordered channel lets later frames overtake a message still being retransmitted,
-and the receiver drops the straggler as stale when it finally lands. Pass
-``max_retransmits=0`` to get the old behaviour, which is a real win once packets
-fit one MTU -- see ``SAFE_PAYLOAD_BYTES``.
+    ordered=False, maxRetransmits=0     small messages arrive, fragmented ones
+                                        never do
+    ordered=False, maxRetransmits=None  nothing arrives at all
+    ordered=True,  maxRetransmits=None  the default here
+
+An aiortc client on the same link received every packet under all three, so
+this is Unity's WebRTC, not the wire. The ``tracker`` channel Unity opens for
+itself is reliable and ordered, and it works; matching it is the configuration
+with evidence behind it.
+
+Ordering does cost what the original design avoided: a lost packet stalls the
+ones behind it until SCTP retransmits, which the operator sees as a brief
+freeze. Over a direct link that is rare, the receiver already discards frames
+that arrive stale, and a stream that stalls occasionally beats a stream that
+never arrives. ``ordered`` and ``max_retransmits`` stay adjustable, and
+unordered is worth retrying whenever the peer's WebRTC is upgraded.
 
 Who opens the channel
 ---------------------
 Unity is the offerer and opens its own reliable ``tracker`` channel for poses
 and controller state. The state channel runs the other way, and is opened here
 by the answering peer after the offer is applied -- WebRTC allows either side to
-open a channel once the SCTP association exists. That keeps the reliability
-settings in one place instead of split across two languages, and the settings do
-reach the far side: a peer receiving this channel sees ``ordered == false`` and
-``maxRetransmits == 0`` on its own handler.
+open a channel once the SCTP association exists. That keeps the delivery
+settings in one place instead of split across two languages, and they do reach
+the far side -- a peer receiving this channel reads them off its own handler,
+which is how the table above was measured.
 
 On the Unity side that means handling ``pc.OnDataChannel`` rather than creating
 the channel:
@@ -69,11 +72,11 @@ TRACKER_CHANNEL_LABEL = "tracker"
 # record with its GCM nonce and tag (~29), the SCTP common header (12) and the
 # DATA chunk header (16) leaves roughly 1195 bytes of payload.
 #
-# This matters more than usual here because the channel is configured with no
-# retransmits: SCTP delivers a fragmented message only if every fragment
-# arrives, so a packet split into k pieces is lost with probability
-# 1-(1-p)^k. Fragmenting quietly multiplies the drop rate the unreliable
-# channel was chosen to keep low.
+# Staying under this is what makes an unreliable channel viable at all: SCTP
+# delivers a fragmented message only if every fragment arrives, so without
+# retransmits a packet split into k pieces is lost with probability 1-(1-p)^k.
+# The default channel retransmits and so tolerates fragmentation, but a scene
+# that fits here can use the cheaper unreliable mode.
 SAFE_PAYLOAD_BYTES = 1195
 
 _CANDIDATE_HOST_RE = re.compile(r"^(a=candidate:[^ ]+ \d+ \w+ \d+ )([^ ]+)( .*)$")
@@ -219,6 +222,7 @@ class UnityStateChannel:
         loop: asyncio.AbstractEventLoop,
         buffer_limit: int = DEFAULT_BUFFER_LIMIT,
         label: str = STATE_CHANNEL_LABEL,
+        ordered: bool = True,
         max_retransmits: int | None = None,
     ) -> None:
         self._scene_id = scene_id
@@ -232,7 +236,7 @@ class UnityStateChannel:
         self._warned_fragmentation = False
 
         self._channel = pc.createDataChannel(
-            label, ordered=False, maxRetransmits=max_retransmits
+            label, ordered=ordered, maxRetransmits=max_retransmits
         )
 
         @self._channel.on("open")
@@ -393,6 +397,8 @@ class UnityStateServer:
         buffer_limit: int = DEFAULT_BUFFER_LIMIT,
         ice_host: str | None = None,
         verbose: bool = True,
+        channel_ordered: bool = True,
+        channel_max_retransmits: int | None = None,
     ) -> None:
         if verbose:
             ensure_console_logging()
@@ -404,6 +410,8 @@ class UnityStateServer:
         self._ice_servers = ice_servers or ["stun:stun.l.google.com:19302"]
         self._buffer_limit = buffer_limit
         self._ice_host = ice_host
+        self._channel_ordered = channel_ordered
+        self._channel_max_retransmits = channel_max_retransmits
 
         self._state: UnityStateChannel | None = None
         self._pcs = set()
@@ -519,6 +527,8 @@ class UnityStateServer:
                         scene_id=self._scene_id,
                         loop=self._loop,
                         buffer_limit=self._buffer_limit,
+                        ordered=self._channel_ordered,
+                        max_retransmits=self._channel_max_retransmits,
                     )
 
                     await pc.setLocalDescription(await pc.createAnswer())

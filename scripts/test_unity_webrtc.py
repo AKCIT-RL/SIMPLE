@@ -6,14 +6,16 @@ Stands up ``UnityStateServer`` and a stand-in Unity client -- an aiortc offerer
 that opens the reliable ``tracker`` channel exactly as ``WebRTCSignalingUnity``
 does -- then checks:
 
-  1. the state channel reaches the client with ordered=False, maxRetransmits=0
+  1. the state channel reaches the client with the delivery settings intact
   2. real G1 poses survive the round trip byte for byte
   3. the tracker channel still carries Unity -> Python messages
   4. publishing while disconnected is a silent no-op, not an exception
 
-The reliability settings are the point of the exercise: they are configured on
-the answering side, and this is what proves they arrive intact on the other end
-rather than being quietly reset to the defaults.
+The delivery settings are the point of the exercise: they are configured on the
+answering side, and this proves they arrive intact rather than being quietly
+reset. Which combination a given peer honours is another matter -- Unity's
+WebRTC delivered nothing on an unordered channel, which is why the default here
+is ordered and reliable.
 
 Usage
 -----
@@ -282,20 +284,22 @@ async def run_test(args) -> int:
     async def body():
         info = client.state_channel_info
         check("canal 'state' recebido pela Unity", info is not None)
-        check(
-            "nao-ordenado (ordered=False)",
-            info["ordered"] is False,
-            f"ordered={info['ordered']}",
-        )
         # Unordered is the setting that matters: it is ordering, not
         # retransmission, that stalls later frames behind a lost one. Delivery
         # stays reliable by default so a packet larger than one MTU survives
         # fragmentation -- the unreliable variant silently lost every one of
         # those against a libwebrtc peer.
+        # Ordered and reliable: the only combination Unity's WebRTC was
+        # observed to deliver. Unordered lost everything against it, and
+        # unordered-unreliable lost anything larger than one MTU -- while an
+        # aiortc client received all three, so the peer is what constrains this.
         check(
             "entrega confiavel por padrao",
             info["maxRetransmits"] is None,
             f"maxRetransmits={info['maxRetransmits']}",
+        )
+        check(
+            "ordenado por padrao", info["ordered"] is True, f"ordered={info['ordered']}"
         )
 
         print("\n[2] Round trip de poses reais do G1")
