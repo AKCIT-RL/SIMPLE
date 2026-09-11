@@ -19,7 +19,8 @@ import simple.envs as _  # import all envs
 if TYPE_CHECKING:
     from simple.envs.sonic_loco_manip import SonicLocoManipEnv
 
-from simple.agents.pico_decoupled_agent import PicoDecoupledAgent
+# from simple.agents.pico_decoupled_agent import PicoDecoupledAgent  # PICO (XRoboToolkit)
+from simple.agents.vuer_decoupled_agent import VuerDecoupledAgent
 from gear_sonic.utils.mujoco_sim.configs import SimLoopConfig
 from simple.robots.g1_sonic import G1Sonic
 
@@ -180,9 +181,34 @@ def main(
     num_episodes: Annotated[int, typer.Option()] = 100,
     shard_size: Annotated[int, typer.Option()] = 100,
     dr_level: Annotated[int, typer.Option()] = 0,
-    record: Annotated[bool, typer.Option()] = False
+    record: Annotated[bool, typer.Option()] = False,
+    unity: Annotated[bool, typer.Option()] = False,
+    unity_host: Annotated[str, typer.Option()] = "0.0.0.0",
+    unity_port: Annotated[int, typer.Option()] = 8765,
+    unity_export_dir: Annotated[str, typer.Option()] = "data/unity_scene",
+    unity_publish_hz: Annotated[float, typer.Option()] = 60.0,
+    unity_ice_host: Annotated[str, typer.Option()] = "",
+    unity_unordered: Annotated[bool, typer.Option()] = False,
+    unity_teleop: Annotated[bool, typer.Option()] = False,
+    unity_wrist_correction: Annotated[bool, typer.Option()] = True,
+    unity_grip_offset: Annotated[str, typer.Option()] = "",
 ):
     assert sim_mode in ["mujoco"], f"Invalid sim_mode {sim_mode} for teleop."
+    # Without --unity there is no channel to carry the operator's poses, so
+    # the agent would hold its rest pose forever with nothing to explain why.
+    assert not (unity_teleop and not unity), (
+        "--unity-teleop needs --unity: the tracker channel that carries the "
+        "operator's poses is opened by the Unity bridge."
+    )
+
+    # Where on the controller body the operator's wrist sits. Parsed here, with
+    # the other argument checks, so a typo fails before the environment is built
+    # rather than once the scene has loaded and the headset is already on.
+    from simple.teleop.unity.streamer import parse_grip_offset
+
+    grip_offset = parse_grip_offset(unity_grip_offset)
+    if any(grip_offset):
+        print(f"[unity] grip offset {grip_offset} m, in controller axes")
     sim_cnt = 0
 
     sonic_config = _load_sonic_config()
@@ -204,7 +230,20 @@ def main(
     assert sonic_env.spec is not None
     assert isinstance(robot, G1Sonic)
 
-    agent = PicoDecoupledAgent(robot)
+    # The Unity client can act as the XR frontend for input as well as for
+    # rendering. The source is created first because both the agent (which
+    # reads from it) and the bridge (which feeds it) need the same one.
+    unity_source = None
+    if unity_teleop:
+        from simple.agents.unity_decoupled_agent import UnityDecoupledAgent
+        from simple.teleop.unity.streamer import UnityTrackerSource
+
+        unity_source = UnityTrackerSource(grip_offset=grip_offset)
+        agent = UnityDecoupledAgent(
+            robot, unity_source, wrist_correction=unity_wrist_correction
+        )
+    else:
+        agent = VuerDecoupledAgent(robot)
     agent.num_episodes = num_episodes
 
     # --- Recording setup ---
@@ -216,10 +255,24 @@ def main(
     control_dt = control_decimal * robot.sim_dt  # = 0.02 s (50 Hz)
 
     def _on_episode_reset():
-        """In recording mode, reset the WBC pipeline to a consistent initial pose,
-        skip elastic band drop, and engage the RL policy immediately."""
-        if not record:
-            return
+        """Put the robot in a usable state: on its feet, balancing, arms parked.
+
+        This used to run only under --record, which conflated two unrelated
+        things. Recording decides whether frames reach the disk. None of what
+        follows has anything to do with that: it releases the elastic band,
+        resets the WBC pipeline and engages the lower-body RL policy.
+
+        Without it the robot is half configured -- no balance policy, so it
+        collapses as soon as the viewer opens, then hangs from the band. The
+        teleop path then appears broken no matter which buttons the operator
+        presses, because get_action returns the band command and never reaches
+        the teleop one.
+
+        The teleop policy stays deactivated on purpose. The upper body holds
+        its default pose until the operator presses the activation button,
+        which is what stops the arms snapping to wherever the controllers
+        happen to be at connection time.
+        """
         if robot.elastic_band is not None:
             robot.elastic_band.enable = False
         agent._dropping = False
@@ -256,6 +309,49 @@ def main(
 
     # Read obj_names after first reset so layout is populated by domain randomization.
     obj_names = list(sonic_env.mujoco.mj_objects.keys())
+
+    # Optional Unity frontend: renders the scene as real geometry in the headset
+    # instead of a video feed of Mujoco's render. It only reads state, so it is
+    # independent of the agent and of recording.
+    #
+    # Built after the first reset on purpose: update_layout() compiles mjModel,
+    # and reset() is what calls it.
+    unity_bridge = None
+    if unity:
+        from simple.teleop.unity.bridge import UnityRenderBridge
+
+        # Count what Unity sends on its own channel. Both channels open, but
+        # opening is DCEP control traffic -- it says nothing about whether data
+        # messages cross. If this stays at zero too, nothing is flowing in
+        # either direction and the state channel is not the thing at fault.
+        tracker_seen = {"n": 0}
+
+        def _on_tracker(message):
+            tracker_seen["n"] += 1
+            if unity_source is not None:
+                unity_source.feed(message)
+            if tracker_seen["n"] in (1, 50, 500):
+                size = len(message) if hasattr(message, "__len__") else "?"
+                print(f"[Unity] tracker: {tracker_seen['n']} mensagens recebidas "
+                      f"(ultima: {size} bytes)")
+
+        unity_bridge = UnityRenderBridge(
+            sonic_env.mujoco,
+            on_tracker=_on_tracker,
+            out_dir=unity_export_dir,
+            host=unity_host,
+            port=unity_port,
+            publish_hz=unity_publish_hz,
+            ice_host=unity_ice_host or None,
+            # Unity's WebRTC was not observed to deliver anything on an
+            # unordered channel; the flag is here to retest that.
+            channel_ordered=not unity_unordered,
+        )
+        print(
+            f"[Unity] cena exportada em {unity_export_dir} "
+            f"(scene_id 0x{unity_bridge.scene_id:08x}); "
+            f"aguardando cliente em ws://{unity_host}:{unity_port}"
+        )
 
     if record:
         # timestamp = datetime.now().strftime("%m%d%H%M%S")
@@ -311,6 +407,10 @@ def main(
                 # stabilized_printed = False
                 rec_state = RecordingState.WAITING_FOR_LANDING
                 initial_target_z = None
+                if unity_bridge is not None:
+                    # A reset can compile a new scene; take the re-export here
+                    # rather than mid-episode.
+                    unity_bridge.resync()
                 print("[TeleopDecoupled] Environment reset complete")
 
             with telemetry.timer("update_viewer"):
@@ -322,6 +422,12 @@ def main(
 
             with telemetry.timer("update_render"):
                 agent.update_render_caches(observation)
+
+            if unity_bridge is not None:
+                with telemetry.timer("unity_publish"):
+                    # Throttles itself to --unity-publish-hz, so calling every
+                    # step costs a clock read when it is not due.
+                    unity_bridge.tick()
 
             """ # --- Print once when robot first stabilizes ---
             if robot.stabilized and not stabilized_printed:
@@ -400,6 +506,8 @@ def main(
                         # stabilized_printed = False
                         rec_state = RecordingState.WAITING_FOR_LANDING
                         initial_target_z = None
+                        if unity_bridge is not None:
+                            unity_bridge.resync()
                         continue  # skip sleep / increment for this iteration
 
             elapsed = time.monotonic() - step_start
@@ -432,6 +540,9 @@ def main(
         # Ensure progress bar is closed
         if step_pbar is not None:
             step_pbar.close()
+        if unity_bridge is not None:
+            print(f"[Unity] {unity_bridge.stats()}")
+            unity_bridge.close()
         if exporter is not None:
             exporter.stop_video_writers()
             print(f"[Record] Done. {episodes_saved} episodes saved to {run_save_dir}")
@@ -445,3 +556,6 @@ def typer_main():
 
 if __name__ == "__main__":
     typer.run(main)
+
+
+# python src/simple/cli/teleop_decoupled_wbc.py simple/G1WholebodyLocomotionPickBetweenTablesTeleop-v0 --target=graspnet1b:0 --sim-mode=mujoco --record --no-headless
