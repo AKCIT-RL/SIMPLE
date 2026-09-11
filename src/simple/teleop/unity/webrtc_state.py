@@ -79,6 +79,14 @@ TRACKER_CHANNEL_LABEL = "tracker"
 # that fits here can use the cheaper unreliable mode.
 SAFE_PAYLOAD_BYTES = 1195
 
+
+def _is_host_candidate(line: str) -> bool:
+    parts = line.split()
+    return "typ" in parts and parts[
+        parts.index("typ") + 1 : parts.index("typ") + 2
+    ] == ["host"]
+
+
 _CANDIDATE_HOST_RE = re.compile(r"^(a=candidate:[^ ]+ \d+ \w+ \d+ )([^ ]+)( .*)$")
 
 
@@ -166,7 +174,9 @@ def rewrite_host_candidates(sdp: str, host: str) -> str:
     lines = []
     rewritten = 0
     for line in sdp.splitlines():
-        if line.startswith("a=candidate:") and " typ host " in line:
+        # "typ host" ends the line unless the peer appended extras, so match
+        # the token rather than a padded substring.
+        if line.startswith("a=candidate:") and _is_host_candidate(line):
             match = _CANDIDATE_HOST_RE.match(line)
             if match:
                 line = f"{match.group(1)}{host}{match.group(3)}"
@@ -241,8 +251,13 @@ class UnityStateChannel:
 
         @self._channel.on("open")
         def _on_open():
+            # The stream id matters: RFC 8832 gives even ids to the DTLS
+            # client and odd to the server. If both peers pick the same one,
+            # data sent here lands on a stream the far side considers its own
+            # outgoing channel, and is dropped without a word.
             logger.info(
-                "state channel open (ordered=%s, maxRetransmits=%s)",
+                "state channel open (id=%s, ordered=%s, maxRetransmits=%s)",
+                self._channel.id,
                 self._channel.ordered,
                 self._channel.maxRetransmits,
             )

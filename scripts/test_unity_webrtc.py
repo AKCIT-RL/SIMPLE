@@ -171,8 +171,11 @@ def test_ice_helpers() -> None:
     # and a reflexive candidate that must survive the rewrite untouched.
     sdp_lines = [
         "v=0",
+        # One with trailing extras, one ending at "typ host" -- aiortc writes
+        # the second form, and a matcher looking for " typ host " with a
+        # trailing space silently skips every one of them.
         "a=candidate:1 1 udp 2130706431 192.168.1.10 5000 typ host generation 0",
-        "a=candidate:2 1 udp 2130706431 172.17.0.1 5001 typ host generation 0",
+        "a=candidate:2 1 udp 2130706431 172.17.0.1 5001 typ host",
         (
             "a=candidate:3 1 udp 1694498815 203.0.113.7 5002 typ srflx "
             "raddr 192.168.1.10 rport 5000"
