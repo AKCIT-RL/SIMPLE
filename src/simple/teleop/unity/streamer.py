@@ -25,11 +25,12 @@ frame near the robot's waist, and the gap between them is the robot's own
 build. ``TeleVuerWrapper`` applies exactly this pair, and so does the
 xr_teleoperate bridge that drives a real G1.
 
-Getting these wrong does not look like a frame error. The target lands outside
-the arm's reach, the IK returns the least-bad pose it can find, and the arm
-tracks the hand loosely while pointing somewhere else -- which reads as an
-inverted axis or broken IK. Before concluding that an axis is flipped, check
-that the target is reachable at all.
+Neither translation actually steers the robot. ``WristsPreProcessor`` consumes
+these poses differentially -- only ``inv(wrist_at_calib) @ wrist_now`` reaches
+the controller -- so a constant offset cancels and even the absolute height is
+irrelevant. What survives is the *rotation* of the wrist, because the delta is
+routed through it. That is where an arm that points the wrong way comes from,
+and ``UnityDecoupledAgent`` explains how it is corrected.
 """
 
 import json
@@ -68,11 +69,17 @@ T_OPENXR_ROBOT = np.array(
 # bridge reproduces to drive a real G1; they are a property of the G1's
 # geometry, not of any headset, which is why both paths carry the same pair.
 #
-# Leaving them out does not tilt the arm, it puts the target roughly at the
-# robot's knees and behind it -- outside the arm's reach -- and an IK asked for
-# an unreachable pose returns whatever is least bad. The result tracks the hand
-# loosely and points somewhere else entirely, which is easy to misread as an
-# inverted axis.
+# Be clear about what this does and does not buy, because it is tempting to
+# reach for it when an arm misbehaves. ``WristsPreProcessor`` is differential:
+# it stores the wrist pose at calibration and thereafter uses only
+# ``inv(wrist_at_calib) @ wrist_now``. A constant translation applied to every
+# frame appears on both sides of that product and cancels exactly, so as far as
+# the current pipeline is concerned this offset is a no-op.
+#
+# It is here for parity with the two implementations above, so the three can be
+# read side by side and the absolute pose means what they mean it to -- not to
+# fix anything. An arm pointing the wrong way is a rotation problem; see the
+# device-name discussion in UnityDecoupledAgent.
 WAIST_FROM_HEAD = np.array([0.15, 0.0, 0.45], dtype=np.float64)
 
 # Poses to hold when Unity has sent nothing yet, so the controller reads a

@@ -30,20 +30,33 @@ draws the scene itself, which is the entire point of this path. That removes
 the per-step ``cv2.resize``, the video buffer, and the coupling between the
 operator's viewpoint and the simulator's frame rate.
 
-The device name stays "vuer"
-----------------------------
-``TeleopPolicy`` is constructed by the inherited method with
-``body_control_device="vuer"``, and that is left alone deliberately. The string
-is not a piece of hardware: ``TeleopStreamer`` does not recognise it, which is
-the whole point -- an unrecognised name leaves ``body_streamer`` as None, so no
-streamer is built for us to fight with and no ``DummyStreamer`` drags in ROS 2.
-The Vuer agent picked it for that reason and this agent inherits the trick.
+Why the device name is "unity" and not "vuer"
+---------------------------------------------
+``TeleopStreamer`` recognises neither, which is what both agents want: an
+unrecognised name leaves ``body_streamer`` as None, so nothing is built for us
+to fight with and no ``DummyStreamer`` drags in ROS 2. That much they share.
 
-Keeping the same string also keeps whatever the name selects downstream
-identical between the two paths, so Unity's wrists are handled exactly as
-TeleVuer's are. Since ``UnityTrackerSource`` already delivers wrists in
-TeleVuer's convention, that is the behaviour we want; changing the name here
-would change it for reasons unrelated to Unity.
+``WristsPreProcessor.calibrate`` does read the name, and this is the part that
+matters. It is a differential controller: at calibration it stores the
+operator's wrist pose, and every frame after it applies ``inv(wrist_at_calib) @
+wrist_now`` to the robot's hand *in that hand's own frame*. So a hand
+translation reaches the robot as ``R_hand_frame @ R_wrist.T @ delta`` -- it is
+routed through the operator's wrist orientation, and only comes out pointing
+the right way if that orientation matches the robot's hand frame.
+
+The names "pico" and "vuer" assert exactly that match, and the preprocessor
+applies no correction for them. Any other name makes it apply one, per arm:
+``hand_rotation_correction`` on the left and the same composed with a half turn
+about Z on the right.
+
+The asymmetry is the tell. The G1's two hand frames are mirror images of each
+other, so one wrong wrist convention -- identical on both hands -- produces a
+different error on each arm. Raising both hands lifting one arm and dropping
+the other is that signature, and it is why "unity" is the right name here:
+Unity reports ``XRNode`` device poses, not the WebXR grip poses TeleVuer
+delivers, so the match "vuer" asserts does not hold.
+
+Pass ``wrist_correction=False`` to fall back to "vuer" and compare.
 """
 
 from __future__ import annotations
@@ -68,7 +81,20 @@ class UnityDecoupledAgent(VuerDecoupledAgent):
             WebRTC or anything else that can deliver those messages.
     """
 
-    def __init__(self, robot: G1Sonic, source: UnityTrackerSource) -> None:
+    TELEOP_DEVICE = "unity"
+
+    def __init__(
+        self,
+        robot: G1Sonic,
+        source: UnityTrackerSource,
+        wrist_correction: bool = True,
+    ) -> None:
+        # Which calibration branch WristsPreProcessor takes. Exposed because
+        # this is an empirical question settled by watching a robot, and the
+        # comparison is expensive to set up: it needs a headset, so being able
+        # to flip it without an edit is worth the one argument.
+        self.TELEOP_DEVICE = "unity" if wrist_correction else "vuer"
+
         self._unity_source = source
         self._buttons = UnityButtonPoller(source)
 

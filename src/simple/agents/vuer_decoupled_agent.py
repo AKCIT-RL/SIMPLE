@@ -47,6 +47,10 @@ class VuerDecoupledAgent(SonicWbcAgent):
     inherited unchanged.
     """
 
+    # Device name handed to TeleopPolicy. See _init_decoupled_policy for what
+    # it selects; subclasses override it to change the wrist calibration.
+    TELEOP_DEVICE = "vuer"
+
     def __init__(self, robot: G1Sonic) -> None:
         super().__init__(robot)
 
@@ -160,16 +164,23 @@ class VuerDecoupledAgent(SonicWbcAgent):
             body_active_joint_groups=["upper_body"],
         )
 
-        # Instantiate TeleopPolicy with device="vuer" — an unknown string that
-        # falls into TeleopStreamer's else-branch (body_streamer = None),
-        # avoiding DummyStreamer which requires ROS2 (KeyboardListenerSubscriber).
-        # enable_real_device defaults to True so _get_live_data() is called,
-        # which will use our injected VuerStreamer via body_streamer.get().
+        # Instantiate TeleopPolicy with device=TELEOP_DEVICE — a string
+        # TeleopStreamer does not recognise, so it falls into the else-branch
+        # (body_streamer = None), avoiding DummyStreamer which requires ROS2
+        # (KeyboardListenerSubscriber). enable_real_device defaults to True so
+        # _get_live_data() is called, which will use our injected VuerStreamer
+        # via body_streamer.get().
+        #
+        # The name is not inert, though: WristsPreProcessor.calibrate() branches
+        # on it. "pico" and "vuer" mean "this device's wrist frame already
+        # matches the robot's hand frames, apply no correction"; any other name
+        # makes it apply a per-arm rotation. Subclasses whose wrists arrive in a
+        # different convention override TELEOP_DEVICE to opt into that.
         self._teleop_policy = TeleopPolicy(
             robot_model=self._dwbc_robot_model,
             retargeting_ik=retargeting_ik,
-            body_control_device="vuer",
-            hand_control_device="vuer",
+            body_control_device=self.TELEOP_DEVICE,
+            hand_control_device=self.TELEOP_DEVICE,
             body_streamer_ip="",
             activate_keyboard_listener=False,
         )

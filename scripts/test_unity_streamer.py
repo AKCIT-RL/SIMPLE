@@ -171,10 +171,15 @@ def test_frame_change() -> None:
         np.allclose(shifted[0:3, 0:3], rel[0:3, 0:3]),
     )
 
-    # The check that matters: an operator standing with hands at chest height
-    # must produce a target the arm can actually reach. Pure algebra passes
-    # whether or not the waist offset is applied -- only a reachability bound
-    # notices that the target sits down by the knees.
+    # Pins the offsets to the ones TeleVuerWrapper applies, by asserting the
+    # posture they produce rather than the arithmetic: an operator standing with
+    # hands at chest height lands in front of the torso, at torso height, within
+    # arm's length. Comparing numbers would restate the constant; this restates
+    # what it is for.
+    #
+    # It is a parity check, not a correctness one. WristsPreProcessor is
+    # differential, so a constant offset cancels before it reaches the robot --
+    # nothing here can tell you whether an arm points the right way.
     #
     # OpenXR is y-up and z-back, so this is a head at 1.5 m and wrists 40 cm
     # lower, 15 cm to each side, 30 cm in front.

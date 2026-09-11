@@ -190,6 +190,7 @@ def main(
     unity_ice_host: Annotated[str, typer.Option()] = "",
     unity_unordered: Annotated[bool, typer.Option()] = False,
     unity_teleop: Annotated[bool, typer.Option()] = False,
+    unity_wrist_correction: Annotated[bool, typer.Option()] = True,
 ):
     assert sim_mode in ["mujoco"], f"Invalid sim_mode {sim_mode} for teleop."
     # Without --unity there is no channel to carry the operator's poses, so
@@ -228,7 +229,9 @@ def main(
         from simple.teleop.unity.streamer import UnityTrackerSource
 
         unity_source = UnityTrackerSource()
-        agent = UnityDecoupledAgent(robot, unity_source)
+        agent = UnityDecoupledAgent(
+            robot, unity_source, wrist_correction=unity_wrist_correction
+        )
     else:
         agent = VuerDecoupledAgent(robot)
     agent.num_episodes = num_episodes
