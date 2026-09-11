@@ -41,6 +41,8 @@ import logging
 import re
 import threading
 
+import numpy as np
+
 from .protocol import encode_state
 
 logger = logging.getLogger(__name__)
@@ -224,10 +226,50 @@ class UnityStateChannel:
                 self._channel.ordered,
                 self._channel.maxRetransmits,
             )
+            self._send_size_probe()
 
         @self._channel.on("close")
         def _on_close():
             logger.info("state channel closed after %d frames", self.sent)
+
+    def _send_size_probe(self) -> None:
+        """Send one small and one full-size message when the channel opens.
+
+        Both carry the magic of a state packet but a body count of zero, so a
+        receiver decodes them as a valid, empty frame and counts them without
+        moving anything.
+
+        The pair separates two failures that look identical from the far end,
+        where nothing arrives and no counter moves. Read the receiver's counters
+        after connecting:
+
+            applied 1, malformed 1  both sizes arrive; size is not the problem
+            applied 1, malformed 0  only the small one; fragmentation is
+            applied 0, malformed 0  nothing arrives; the channel is not
+                                    delivering at all, and size is a red herring
+
+        The small probe decodes as a valid zero-body frame, so it lands in
+        ``applied``. The padded one declares zero bodies but carries a longer
+        body, so the length check rejects it into ``droppedMalformed`` -- which
+        is what makes its arrival visible without moving any geometry.
+        """
+        empty = np.zeros((0, 3), dtype=np.float32), np.zeros((0, 4), dtype=np.float32)
+        small = encode_state(0, self._scene_id, *empty)
+        # Padding rides in an oversized frame declaring zero bodies, so the
+        # receiver rejects it cleanly rather than trying to place phantom links.
+        padded = small + b"\x00" * (SAFE_PAYLOAD_BYTES + 200 - len(small))
+
+        logger.info(
+            "size probe: sending %d bytes then %d bytes "
+            "(if only the first is received, fragmentation is the problem)",
+            len(small),
+            len(padded),
+        )
+        for packet in (small, padded):
+            try:
+                self._channel.send(packet)
+            except Exception:
+                logger.warning("size probe send failed", exc_info=True)
 
     @property
     def is_open(self) -> bool:
