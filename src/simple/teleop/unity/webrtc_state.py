@@ -144,15 +144,44 @@ def rewrite_host_candidates(sdp: str, host: str) -> str:
     guesswork.
     """
     if not host:
-        return sdp
+        return sdp, 0
     lines = []
+    rewritten = 0
     for line in sdp.splitlines():
         if line.startswith("a=candidate:") and " typ host " in line:
             match = _CANDIDATE_HOST_RE.match(line)
             if match:
                 line = f"{match.group(1)}{host}{match.group(3)}"
+                rewritten += 1
         lines.append(line)
-    return "\r\n".join(lines) + "\r\n"
+    return "\r\n".join(lines), rewritten
+
+
+# Attributes some builds of Unity's WebRTC refuse. Current aiortc emits
+# neither, but python_webrtc.py filtered them and the cost of keeping the
+# filter is nil.
+_UNITY_REJECTED_SDP_ATTRS = ("a=extmap-allow-mixed", "a=ice-options")
+
+
+def clean_sdp_for_unity(sdp: str) -> str:
+    """Shape an answer SDP so Unity's WebRTC will accept it.
+
+    Unity parses the answer by splitting on line breaks and rejoining with
+    CRLF, then appending one more CRLF of its own (``WebRTCUtils.ApplySDP``).
+    aiortc's SDP already ends in CRLF, so that split yields a trailing empty
+    element and the rejoin lands a blank line at the end -- which libwebrtc
+    rejects outright as "Invalid SDP line", naming no line in particular.
+
+    Returning without a trailing newline makes that round trip lossless. It is
+    the same shape python_webrtc.py sends, which is the version known to work
+    against this client.
+    """
+    cleaned = [
+        line
+        for line in sdp.splitlines()
+        if line.strip() and not line.startswith(_UNITY_REJECTED_SDP_ATTRS)
+    ]
+    return "\r\n".join(cleaned)
 
 
 # Above this many bytes queued on the channel, the link is not keeping up.
@@ -428,8 +457,13 @@ class UnityStateServer:
 
                     sdp = pc.localDescription.sdp
                     if self._ice_host:
-                        sdp = rewrite_host_candidates(sdp, self._ice_host)
-                        logger.info("pinned host candidates to %s", self._ice_host)
+                        sdp, rewritten = rewrite_host_candidates(sdp, self._ice_host)
+                        logger.info(
+                            "pinned %d host candidate(s) to %s",
+                            rewritten,
+                            self._ice_host,
+                        )
+                    sdp = clean_sdp_for_unity(sdp)
 
                     await websocket.send(
                         json.dumps({"type": pc.localDescription.type, "sdp": sdp})

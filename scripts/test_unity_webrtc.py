@@ -29,6 +29,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import sys
 import tempfile
 
@@ -47,6 +48,7 @@ from simple.teleop.unity.scene_export import export_scene, world_poses
 from simple.teleop.unity.webrtc_state import (
     SAFE_PAYLOAD_BYTES,
     UnityStateServer,
+    clean_sdp_for_unity,
     is_routable_candidate,
     rewrite_host_candidates,
 )
@@ -176,15 +178,15 @@ def test_ice_helpers() -> None:
         "a=mid:0",
     ]
     sdp = "\r\n".join(sdp_lines)
-    out = rewrite_host_candidates(sdp, "100.118.137.125")
+    out, rewritten = rewrite_host_candidates(sdp, "100.118.137.125")
     check(
         "todos os candidates host viram o IP do Tailscale",
-        out.count("100.118.137.125") == 2,
-        f"{out.count('100.118.137.125')} de 2",
+        rewritten == 2 and out.count("100.118.137.125") == 2,
+        f"{rewritten} de 2",
     )
     check("candidate srflx intocado", "203.0.113.7 5002 typ srflx" in out)
     check("linhas nao-candidate intocadas", "a=mid:0" in out and "v=0" in out)
-    check("sem ice_host o SDP passa igual", rewrite_host_candidates(sdp, "") == sdp)
+    check("sem ice_host o SDP passa igual", rewrite_host_candidates(sdp, "")[0] == sdp)
 
     check("link-local IPv4 descartado", not is_routable_candidate("169.254.3.4"))
     check("link-local IPv6 descartado", not is_routable_candidate("fe80::1"))
@@ -202,6 +204,54 @@ def test_ice_helpers() -> None:
         n for n in range(1, 500) if protocol.packet_size(n) > SAFE_PAYLOAD_BYTES
     )
     print(f"         fragmenta a partir de {limit} bodies")
+
+    test_sdp_survives_unity_round_trip()
+
+
+def unity_apply_sdp(sdp: str) -> str:
+    """Reproduce what WebRTCSignalingUnity does to a received answer.
+
+    It splits on either line ending with StringSplitOptions.None, rejoins with
+    CRLF, and appends one more CRLF:
+
+        p.sdp.Split(new[] { "\\r\\n", "\\n" }, StringSplitOptions.None)
+        string.Join("\\r\\n", sdpLines) + "\\r\\n"
+    """
+    return "\r\n".join(re.split(r"\r\n|\n", sdp)) + "\r\n"
+
+
+def test_sdp_survives_unity_round_trip() -> None:
+    """The answer must not grow a blank line on the way into libwebrtc.
+
+    aiortc ends its SDP with CRLF. Unity's split then yields a trailing empty
+    element, the rejoin keeps it, and Unity's own appended CRLF turns it into a
+    blank line -- which libwebrtc rejects as "Invalid SDP line" without saying
+    which one. Stripping the trailing newline before sending is what keeps the
+    round trip lossless.
+    """
+    print("\n[0c] SDP sobrevive ao parsing da Unity")
+
+    raw = "v=0\r\na=mid:0\r\na=setup:active\r\n"  # como o aiortc entrega
+    naive = unity_apply_sdp(raw)
+    check(
+        "SDP cru ganha linha em branco (o bug)",
+        any(not line.strip() for line in naive.split("\r\n")[:-1]),
+        "confirma o mecanismo",
+    )
+
+    cleaned = unity_apply_sdp(clean_sdp_for_unity(raw))
+    blanks = [line for line in cleaned.split("\r\n")[:-1] if not line.strip()]
+    check("SDP limpo nao ganha linha em branco", not blanks, f"{len(blanks)} em branco")
+    check("conteudo preservado", "v=0" in cleaned and "a=setup:active" in cleaned)
+    check(
+        "sem newline no fim antes da Unity", not clean_sdp_for_unity(raw).endswith("\n")
+    )
+
+    messy = "v=0\r\n\r\na=ice-options:trickle\r\na=extmap-allow-mixed\r\na=mid:0\r\n"
+    out = clean_sdp_for_unity(messy)
+    check("linhas em branco removidas", "\r\n\r\n" not in out)
+    check("a=ice-options removido", "ice-options" not in out)
+    check("a=extmap-allow-mixed removido", "extmap-allow-mixed" not in out)
 
 
 async def run_test(args) -> int:
