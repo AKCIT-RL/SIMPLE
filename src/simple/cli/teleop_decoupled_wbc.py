@@ -274,8 +274,22 @@ def main(
     if unity:
         from simple.teleop.unity.bridge import UnityRenderBridge
 
+        # Count what Unity sends on its own channel. Both channels open, but
+        # opening is DCEP control traffic -- it says nothing about whether data
+        # messages cross. If this stays at zero too, nothing is flowing in
+        # either direction and the state channel is not the thing at fault.
+        tracker_seen = {"n": 0}
+
+        def _on_tracker(message):
+            tracker_seen["n"] += 1
+            if tracker_seen["n"] in (1, 50, 500):
+                size = len(message) if hasattr(message, "__len__") else "?"
+                print(f"[Unity] tracker: {tracker_seen['n']} mensagens recebidas "
+                      f"(ultima: {size} bytes)")
+
         unity_bridge = UnityRenderBridge(
             sonic_env.mujoco,
+            on_tracker=_on_tracker,
             out_dir=unity_export_dir,
             host=unity_host,
             port=unity_port,
