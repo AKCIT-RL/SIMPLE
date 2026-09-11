@@ -364,6 +364,19 @@ class UnityStreamerCore:
     MAX_ANGULAR_VEL = 1.0  # rad/s
     CONTROL_DT = 1.0 / 50.0  # the policy calls get() at 50 Hz
 
+    # Sign per stick axis, as Unity reports them.
+    #
+    # VuerStreamer negates the forward axis because WebXR's gamepad spec makes
+    # y positive when the stick is pulled *towards* the operator. Unity's
+    # primary2DAxis is positive away from them, so copying that negation sends
+    # the robot backwards. The other two axes agree between the runtimes.
+    #
+    # Flip one of these if a runtime update changes a convention; the symptom
+    # is an axis that drives the opposite way, and nothing else.
+    FORWARD_SIGN = 1.0
+    STRAFE_SIGN = -1.0
+    YAW_SIGN = -1.0
+
     HEIGHT_INCREMENT = 0.01
     HEIGHT_MIN = 0.20
     HEIGHT_MAX = 0.74
@@ -395,12 +408,12 @@ class UnityStreamerCore:
         data = self.source.snapshot()
         left_wrist, right_wrist = self.source.wrist_poses()
 
-        # Left stick drives the base, right stick turns it. Both axes are
-        # negated: OpenXR reports +y away from the operator and +x to the
-        # right, while the controller wants forward and left positive.
-        forward = -float(data.left_ctrl_thumbstickValue[1])
-        strafe = -float(data.left_ctrl_thumbstickValue[0])
-        yaw_rate_in = -float(data.right_ctrl_thumbstickValue[0])
+        # Left stick drives the base, right stick turns it. See the sign
+        # constants above for why forward is not negated the way VuerStreamer
+        # negates it.
+        forward = self.FORWARD_SIGN * float(data.left_ctrl_thumbstickValue[1])
+        strafe = self.STRAFE_SIGN * float(data.left_ctrl_thumbstickValue[0])
+        yaw_rate_in = self.YAW_SIGN * float(data.right_ctrl_thumbstickValue[0])
 
         lin_vel_x = apply_dead_zone(forward, self.DEAD_ZONE) * self.MAX_LINEAR_VEL
         lin_vel_y = apply_dead_zone(strafe, self.DEAD_ZONE) * self.MAX_LINEAR_VEL

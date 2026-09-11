@@ -287,11 +287,22 @@ def test_navigation_and_height() -> None:
     source = UnityTrackerSource()
     core = UnityStreamerCore(source)
 
+    # Unity's primary2DAxis is positive away from the operator, unlike WebXR's
+    # gamepad axis. Copying VuerStreamer's negation drove the robot backwards.
+    source.feed(tracker_message(leftStickY=1.0))
+    out = core.poll()
+    check(
+        "stick para frente leva o robo para frente",
+        out["control_data"]["navigate_cmd"][0] > 0,
+        f"lin_vel_x={out['control_data']['navigate_cmd'][0]:.2f}",
+    )
+
+    core.reset_status()
     source.feed(tracker_message(leftStickY=-1.0))
     out = core.poll()
     check(
-        "stick para frente e velocidade positiva",
-        out["control_data"]["navigate_cmd"][0] > 0,
+        "stick para tras leva para tras",
+        out["control_data"]["navigate_cmd"][0] < 0,
         f"lin_vel_x={out['control_data']['navigate_cmd'][0]:.2f}",
     )
 
