@@ -100,6 +100,43 @@ def to_robot_frame(pose: np.ndarray) -> np.ndarray:
     return T_ROBOT_OPENXR @ pose @ T_OPENXR_ROBOT
 
 
+def apply_grip_offset(pose: np.ndarray, offset) -> np.ndarray:
+    """Move a controller pose's origin along the controller's own axes.
+
+    A controller reports a pose whose origin sits at some point on its body,
+    and runtimes disagree about which point: WebXR's grip space lands near the
+    middle of the handle, Unity's XRNode nearer its base. The gap is a few
+    centimetres, fixed, and rigid.
+
+    It has to be applied in the controller's frame, not the world's. A
+    world-frame shift moves the target by a constant vector no matter how the
+    hand is turned, which leaves the pivot in the wrong place: rotating the
+    wrist then swings the target through an arc instead of turning it on the
+    spot, and the robot's hand orbits. That is what "the wrists feel wrong"
+    describes, and no amount of tuning a world-frame offset fixes it, because
+    the error depends on orientation.
+
+    Rotation is unaffected. That part was already right: on the xr_teleoperate
+    side, roll on the controller produced clean roll on the robot with no
+    correction, which is why only the origin needs moving.
+
+    Args:
+        pose: 4x4 controller pose, in whatever frame it arrived in.
+        offset: 3-vector in the controller's local frame. Calibrate by holding
+            the controller still and rotating it in place: the robot's wrist
+            should turn without translating. Whichever way it drifts is the
+            axis to correct.
+    """
+    offset = np.asarray(offset, dtype=np.float64)
+    if offset.shape != (3,):
+        raise ValueError(f"Expected a 3-vector offset, got {offset.shape}")
+    if not offset.any():
+        return pose
+    shifted = pose.copy()
+    shifted[0:3, 3] += pose[0:3, 0:3] @ offset
+    return shifted
+
+
 def headset_relative_wrist(wrist: np.ndarray, head: np.ndarray) -> np.ndarray:
     """Express a wrist pose relative to the head, both already robot-frame.
 
@@ -154,11 +191,14 @@ class UnityTrackerSource:
     operator's hands used to be.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, grip_offset=(0.0, 0.0, 0.0)) -> None:
         self._lock = threading.Lock()
         self._data = UnityTeleData()
         self.received = 0
         self.rejected = 0
+        # Controller-local, so it rotates with the hand. Zero by default: a
+        # silent constant here would be indistinguishable from a frame bug.
+        self.grip_offset = np.asarray(grip_offset, dtype=np.float64)
 
     def feed(self, message) -> bool:
         """Ingest one ``tracker`` message. Returns False if it was unusable.
@@ -248,8 +288,15 @@ class UnityTrackerSource:
         """Both wrists in the robot frame, relative to the head."""
         data = self.snapshot()
         head = to_robot_frame(data.head_pose)
-        left = headset_relative_wrist(to_robot_frame(data.left_wrist_pose), head)
-        right = headset_relative_wrist(to_robot_frame(data.right_wrist_pose), head)
+        # Offset first, while the pose is still in the controller's own frame.
+        left = headset_relative_wrist(
+            to_robot_frame(apply_grip_offset(data.left_wrist_pose, self.grip_offset)),
+            head,
+        )
+        right = headset_relative_wrist(
+            to_robot_frame(apply_grip_offset(data.right_wrist_pose, self.grip_offset)),
+            head,
+        )
         return left, right
 
     def stats(self) -> dict:

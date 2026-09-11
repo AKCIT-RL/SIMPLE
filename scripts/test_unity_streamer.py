@@ -36,6 +36,7 @@ from simple.teleop.unity.streamer import (
     UnityStreamerCore,
     UnityTrackerSource,
     apply_dead_zone,
+    apply_grip_offset,
     finger_data_from_controller,
     headset_relative_wrist,
     is_usable_pose,
@@ -154,6 +155,111 @@ def test_frame_change() -> None:
         str(rel[0:3, 3]),
     )
     check("rotacao do pulso preservada", np.allclose(rel[0:3, 0:3], wrist[0:3, 0:3]))
+
+
+def test_grip_offset() -> None:
+    """The controller's reported origin is not where the wrist pivots.
+
+    Runtimes disagree about where on the controller body the pose sits --
+    WebXR near the middle of the handle, Unity nearer the base. The gap is
+    rigid, and the whole point is that it must rotate with the hand: a
+    world-frame shift leaves the pivot wrong, so turning the wrist swings the
+    target through an arc and the robot's hand orbits instead of rotating.
+    """
+    print("\n[3] Deslocamento da origem do controle")
+
+    identity = np.eye(4)
+    check(
+        "offset zero nao altera nada",
+        apply_grip_offset(identity, (0, 0, 0)) is identity,
+    )
+
+    out = apply_grip_offset(identity, (0, 0, -0.05))
+    check(
+        "sem rotacao, desloca no eixo pedido",
+        np.allclose(out[0:3, 3], [0, 0, -0.05]),
+        str(out[0:3, 3]),
+    )
+
+    # Turn the controller 180 degrees about Y: a local offset must follow it.
+    turned = np.eye(4)
+    turned[0:3, 0:3] = np.array([[-1, 0, 0], [0, 1, 0], [0, 0, -1]], dtype=float)
+    out = apply_grip_offset(turned, (0, 0, -0.05))
+    check(
+        "offset acompanha a rotacao do controle",
+        np.allclose(out[0:3, 3], [0, 0, 0.05]),
+        str(out[0:3, 3]),
+    )
+
+    # The property that matters: with the origin on the pivot, spinning the
+    # controller in place must not translate the target.
+    pivot = np.array([0.0, 0.0, -0.05])
+    positions = []
+    for angle in np.linspace(0, 2 * np.pi, 16, endpoint=False):
+        c, sn = np.cos(angle), np.sin(angle)
+        m = np.eye(4)
+        m[0:3, 0:3] = np.array([[c, 0, sn], [0, 1, 0], [-sn, 0, c]])
+        # Origin orbits the true pivot, as a base-of-controller pose would.
+        m[0:3, 3] = -m[0:3, 0:3] @ pivot
+        positions.append(apply_grip_offset(m, pivot)[0:3, 3])
+    spread = float(np.ptp(np.array(positions), axis=0).max())
+    check(
+        "com o offset certo, girar nao transladar",
+        spread < 1e-12,
+        f"dispersao {spread:.2e} m",
+    )
+
+    # And without it, the same motion drags the target around a 10 cm circle --
+    # the "wrists feel wrong" symptom, measured.
+    spread_raw = float(
+        np.ptp(
+            np.array(
+                [
+                    apply_grip_offset(
+                        np.block(
+                            [
+                                [
+                                    np.array(
+                                        [
+                                            [np.cos(a), 0, np.sin(a)],
+                                            [0, 1, 0],
+                                            [-np.sin(a), 0, np.cos(a)],
+                                        ]
+                                    ),
+                                    (
+                                        -np.array(
+                                            [
+                                                [np.cos(a), 0, np.sin(a)],
+                                                [0, 1, 0],
+                                                [-np.sin(a), 0, np.cos(a)],
+                                            ]
+                                        )
+                                        @ pivot
+                                    ).reshape(3, 1),
+                                ],
+                                [np.zeros((1, 3)), np.ones((1, 1))],
+                            ]
+                        ),
+                        (0, 0, 0),
+                    )[0:3, 3]
+                    for a in np.linspace(0, 2 * np.pi, 16, endpoint=False)
+                ]
+            ),
+            axis=0,
+        ).max()
+    )
+    check(
+        "sem offset, o alvo descreve um arco",
+        spread_raw > 0.09,
+        f"dispersao {spread_raw * 100:.1f} cm",
+    )
+
+    try:
+        apply_grip_offset(identity, (0, 0))
+        raised = False
+    except ValueError:
+        raised = True
+    check("offset com tamanho errado e erro", raised)
 
 
 def test_dead_zone() -> None:
@@ -317,6 +423,7 @@ def test_defaults_before_any_input() -> None:
 def main() -> int:
     test_payload_parsing()
     test_frame_change()
+    test_grip_offset()
     test_dead_zone()
     test_navigation_and_height()
     test_edge_triggered_toggles()
