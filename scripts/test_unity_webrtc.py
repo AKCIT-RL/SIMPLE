@@ -287,9 +287,14 @@ async def run_test(args) -> int:
             info["ordered"] is False,
             f"ordered={info['ordered']}",
         )
+        # Unordered is the setting that matters: it is ordering, not
+        # retransmission, that stalls later frames behind a lost one. Delivery
+        # stays reliable by default so a packet larger than one MTU survives
+        # fragmentation -- the unreliable variant silently lost every one of
+        # those against a libwebrtc peer.
         check(
-            "sem retransmissao (maxRetransmits=0)",
-            info["maxRetransmits"] == 0,
+            "entrega confiavel por padrao",
+            info["maxRetransmits"] is None,
             f"maxRetransmits={info['maxRetransmits']}",
         )
 

@@ -2,12 +2,25 @@
 Stream scene state to Unity over an unreliable WebRTC data channel.
 
 Pose state is disposable: every frame supersedes the one before it, so a packet
-that goes missing costs nothing as long as the next one arrives on time. A
-reliable ordered channel gets that exactly backwards -- one lost packet stalls
-the stream behind retransmissions and the operator sees the scene freeze and
-then jump. The state channel is therefore opened with ``ordered=False`` and
-``maxRetransmits=0``: a lost packet is simply gone, and the next frame lands on
-schedule.
+that goes missing costs nothing as long as the next one arrives on time. An
+ordered channel gets that backwards -- one lost packet stalls everything behind
+it while SCTP retransmits, and the operator sees the scene freeze and then jump.
+So the channel is always **unordered**.
+
+Reliability is a separate axis, and the first version got it wrong. It also set
+``maxRetransmits=0``, reasoning that a dropped frame is free. That holds only
+while a message fits inside one MTU. Above it SCTP fragments, and an
+unreliable fragmented message survives only if every fragment does -- against a
+libwebrtc peer across a 1280-byte Tailscale link, none did: the channel opened,
+both ends agreed on the settings, and nothing above the MTU ever arrived. A
+20-byte probe landed; a 1395-byte one did not.
+
+The default is therefore unordered and reliable. Head-of-line blocking, the
+thing worth avoiding, comes from ordering rather than from retransmission: an
+unordered channel lets later frames overtake a message still being retransmitted,
+and the receiver drops the straggler as stale when it finally lands. Pass
+``max_retransmits=0`` to get the old behaviour, which is a real win once packets
+fit one MTU -- see ``SAFE_PAYLOAD_BYTES``.
 
 Who opens the channel
 ---------------------
@@ -206,6 +219,7 @@ class UnityStateChannel:
         loop: asyncio.AbstractEventLoop,
         buffer_limit: int = DEFAULT_BUFFER_LIMIT,
         label: str = STATE_CHANNEL_LABEL,
+        max_retransmits: int | None = None,
     ) -> None:
         self._scene_id = scene_id
         self._loop = loop
@@ -217,7 +231,9 @@ class UnityStateChannel:
 
         self._warned_fragmentation = False
 
-        self._channel = pc.createDataChannel(label, ordered=False, maxRetransmits=0)
+        self._channel = pc.createDataChannel(
+            label, ordered=False, maxRetransmits=max_retransmits
+        )
 
         @self._channel.on("open")
         def _on_open():
@@ -309,15 +325,27 @@ class UnityStateChannel:
 
         if len(packet) > SAFE_PAYLOAD_BYTES and not self._warned_fragmentation:
             self._warned_fragmentation = True
-            logger.warning(
-                "state packet is %d bytes for %d bodies, above the ~%d that fits "
-                "one 1280-byte MTU (Tailscale, most VPNs). SCTP will fragment it, "
-                "and with no retransmits a message survives only if every "
-                "fragment does -- expect the drop rate to rise with body count.",
-                len(packet),
-                len(positions),
-                SAFE_PAYLOAD_BYTES,
-            )
+            if self._channel.maxRetransmits == 0:
+                logger.warning(
+                    "state packet is %d bytes for %d bodies, above the ~%d that "
+                    "fits one 1280-byte MTU, and this channel does not "
+                    "retransmit. A fragmented message survives only if every "
+                    "fragment does; against a libwebrtc peer none did. Drop "
+                    "max_retransmits=0 or get the packet under the MTU.",
+                    len(packet),
+                    len(positions),
+                    SAFE_PAYLOAD_BYTES,
+                )
+            else:
+                logger.info(
+                    "state packet is %d bytes for %d bodies, above the ~%d that "
+                    "fits one 1280-byte MTU, so SCTP fragments it. The channel "
+                    "retransmits, so this costs latency on loss rather than the "
+                    "frame itself.",
+                    len(packet),
+                    len(positions),
+                    SAFE_PAYLOAD_BYTES,
+                )
 
         self._loop.call_soon_threadsafe(self._send, packet)
         with self._lock:
