@@ -249,6 +249,71 @@ def test_alignment_maps_rotation_too() -> None:
         )
 
 
+def test_grip_offset_survives_the_differential() -> None:
+    """A controller-local offset changes the pivot; a world-constant cannot.
+
+    This is the distinction that matters when picking which knob to reach for.
+    WAIST_FROM_HEAD is a world-frame constant: it appears on both sides of
+    inv(W0) @ W and cancels exactly, which is why adding it changed nothing. A
+    grip offset is a right-multiplication by a translation in the controller's
+    own frame, so it conjugates the delta instead of cancelling -- and shows up
+    precisely when the operator rotates the controller in place.
+    """
+    print("\n[6] O offset de punho sobrevive ao diferencial")
+
+    wrist_rot = rotation("y", 35.0) @ rotation("x", 15.0)
+    local_offset = np.array([0.0, 0.0, -0.06])
+    world_constant = np.array([0.15, 0.0, 0.45])
+
+    def hand_after_turning_in_place(offset=None, constant=None):
+        """Rotate the controller about its own origin, without moving the hand."""
+        pre = FakeWristsPreProcessor(g1_like_hands())
+
+        def wrists(rot):
+            out = operator_wrists(rot)
+            for side, m in out.items():
+                if offset is not None:
+                    m[:3, 3] = m[:3, 3] + m[:3, :3] @ offset
+                if constant is not None:
+                    m[:3, 3] = m[:3, 3] + constant
+            return out
+
+        start = wrists(wrist_rot)
+        pre.calibrate(start, "vuer")
+        align_wrist_frames(pre)
+        before = pre(start)
+        after = pre(wrists(rotation("z", 45.0) @ wrist_rot))
+        return {ee: after[ee][:3, 3] - before[ee][:3, 3] for ee in pre.ee_name_list}
+
+    baseline = hand_after_turning_in_place()
+    with_offset = hand_after_turning_in_place(offset=local_offset)
+    with_constant = hand_after_turning_in_place(constant=world_constant)
+
+    for ee_name in baseline:
+        side = "esquerdo" if ee_name == FakeWristsPreProcessor.LEFT else "direito"
+        check(
+            f"constante no mundo nao muda nada ({side})",
+            np.allclose(baseline[ee_name], with_constant[ee_name], atol=1e-12),
+            f"{np.round(with_constant[ee_name] - baseline[ee_name], 6)}",
+        )
+        moved = np.linalg.norm(with_offset[ee_name] - baseline[ee_name])
+        check(
+            f"offset no controle move o pivo ({side})",
+            moved > 0.01,
+            f"{moved * 100:.1f} cm de diferenca ao girar no lugar",
+        )
+
+    # Without any offset the hand should stay put when the controller turns on
+    # its own origin -- that is what makes the drift a usable calibration signal.
+    for ee_name, delta in baseline.items():
+        side = "esquerdo" if ee_name == FakeWristsPreProcessor.LEFT else "direito"
+        check(
+            f"sem offset, girar no lugar nao transladar ({side})",
+            np.allclose(delta, 0.0, atol=1e-9),
+            str(np.round(delta, 6)),
+        )
+
+
 def test_alignment_needs_calibration_first() -> None:
     print("\n[5] Sem calibracao nao ha o que alinhar")
     pre = FakeWristsPreProcessor(g1_like_hands())
@@ -261,6 +326,7 @@ def main() -> int:
     test_hardcoded_corrections_break_one_arm()
     test_alignment_fixes_both_arms()
     test_alignment_maps_rotation_too()
+    test_grip_offset_survives_the_differential()
     test_alignment_needs_calibration_first()
 
     print("\nTodos os testes passaram." if not failures else f"\n{failures} FALHA(S).")

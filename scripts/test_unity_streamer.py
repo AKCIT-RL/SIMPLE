@@ -42,6 +42,7 @@ from simple.teleop.unity.streamer import (
     headset_relative_wrist,
     is_usable_pose,
     matrix_from_payload,
+    parse_grip_offset,
     to_robot_frame,
     to_waist_origin,
 )
@@ -321,6 +322,31 @@ def test_grip_offset() -> None:
     check("offset com tamanho errado e erro", raised)
 
 
+def test_grip_offset_parsing() -> None:
+    print("\n[3b] Leitura do offset de punho na linha de comando")
+
+    check("vazio vira zero", parse_grip_offset("") == (0.0, 0.0, 0.0))
+    check("espacos viram zero", parse_grip_offset("   ") == (0.0, 0.0, 0.0))
+    check(
+        "tres numeros sao lidos",
+        parse_grip_offset("0, 0, -0.04") == (0.0, 0.0, -0.04),
+        str(parse_grip_offset("0, 0, -0.04")),
+    )
+
+    for bad, why in (
+        ("0,0", "componentes de menos"),
+        ("0,0,0,0", "componentes demais"),
+        ("a,b,c", "nao numerico"),
+        ("0,0,4", "em centimetros por engano"),
+    ):
+        try:
+            parse_grip_offset(bad)
+            raised = False
+        except ValueError:
+            raised = True
+        check(f"recusa entrada invalida ({why})", raised)
+
+
 def test_dead_zone() -> None:
     print("\n[3] Zona morta dos analogicos")
     check("centro vira zero", apply_dead_zone(0.05, 0.1) == 0.0)
@@ -539,6 +565,7 @@ def main() -> int:
     test_payload_parsing()
     test_frame_change()
     test_grip_offset()
+    test_grip_offset_parsing()
     test_dead_zone()
     test_navigation_and_height()
     test_edge_triggered_toggles()

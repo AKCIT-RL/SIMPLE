@@ -124,6 +124,30 @@ def to_robot_frame(pose: np.ndarray) -> np.ndarray:
     return T_ROBOT_OPENXR @ pose @ T_OPENXR_ROBOT
 
 
+def parse_grip_offset(text: str) -> tuple:
+    """Read a controller-local grip offset from ``"x,y,z"`` in metres.
+
+    Exists so the offset can be calibrated against a running robot instead of
+    through an edit-and-restart cycle, which is the only way to find it: it is a
+    property of what the runtime reports, not something derivable from the code.
+    """
+    if not text or not text.strip():
+        return (0.0, 0.0, 0.0)
+    parts = [p.strip() for p in text.split(",")]
+    if len(parts) != 3:
+        raise ValueError(f"Expected 'x,y,z' in metres, got {text!r}")
+    try:
+        values = tuple(float(p) for p in parts)
+    except ValueError:
+        raise ValueError(f"Expected three numbers in metres, got {text!r}") from None
+    if any(abs(v) > 0.5 for v in values):
+        raise ValueError(
+            f"Grip offset {values} is over 0.5 m; it is a few centimetres on the "
+            "controller body, and metres are the unit"
+        )
+    return values
+
+
 def apply_grip_offset(pose: np.ndarray, offset) -> np.ndarray:
     """Move a controller pose's origin along the controller's own axes.
 

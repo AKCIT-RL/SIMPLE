@@ -191,6 +191,7 @@ def main(
     unity_unordered: Annotated[bool, typer.Option()] = False,
     unity_teleop: Annotated[bool, typer.Option()] = False,
     unity_wrist_correction: Annotated[bool, typer.Option()] = True,
+    unity_grip_offset: Annotated[str, typer.Option()] = "",
 ):
     assert sim_mode in ["mujoco"], f"Invalid sim_mode {sim_mode} for teleop."
     # Without --unity there is no channel to carry the operator's poses, so
@@ -199,6 +200,15 @@ def main(
         "--unity-teleop needs --unity: the tracker channel that carries the "
         "operator's poses is opened by the Unity bridge."
     )
+
+    # Where on the controller body the operator's wrist sits. Parsed here, with
+    # the other argument checks, so a typo fails before the environment is built
+    # rather than once the scene has loaded and the headset is already on.
+    from simple.teleop.unity.streamer import parse_grip_offset
+
+    grip_offset = parse_grip_offset(unity_grip_offset)
+    if any(grip_offset):
+        print(f"[unity] grip offset {grip_offset} m, in controller axes")
     sim_cnt = 0
 
     sonic_config = _load_sonic_config()
@@ -228,7 +238,7 @@ def main(
         from simple.agents.unity_decoupled_agent import UnityDecoupledAgent
         from simple.teleop.unity.streamer import UnityTrackerSource
 
-        unity_source = UnityTrackerSource()
+        unity_source = UnityTrackerSource(grip_offset=grip_offset)
         agent = UnityDecoupledAgent(
             robot, unity_source, wrist_correction=unity_wrist_correction
         )
