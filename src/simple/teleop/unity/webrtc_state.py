@@ -64,6 +64,28 @@ SAFE_PAYLOAD_BYTES = 1195
 _CANDIDATE_HOST_RE = re.compile(r"^(a=candidate:[^ ]+ \d+ \w+ \d+ )([^ ]+)( .*)$")
 
 
+def ensure_console_logging() -> None:
+    """Make this package's INFO output visible on the console.
+
+    SIMPLE configures no logging at all, so the effective level is WARNING and
+    every connection message here goes nowhere. That is survivable right up
+    until a headset will not connect, at which point the log this code already
+    writes -- signaling up, peer state, channel opened -- is exactly what says
+    where the handshake stopped, and none of it reaches the operator.
+
+    A library has no business reconfiguring the root logger, so the handler is
+    attached to ``simple.teleop.unity`` only and does nothing if the
+    application has already set one up.
+    """
+    package_logger = logging.getLogger("simple.teleop.unity")
+    if package_logger.handlers or logging.getLogger().handlers:
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("[unity] %(message)s"))
+    package_logger.addHandler(handler)
+    package_logger.setLevel(logging.INFO)
+
+
 def is_routable_candidate(address: str) -> bool:
     """False for candidates a remote peer can never reach.
 
@@ -237,7 +259,10 @@ class UnityStateServer:
         ice_servers=None,
         buffer_limit: int = DEFAULT_BUFFER_LIMIT,
         ice_host: str | None = None,
+        verbose: bool = True,
     ) -> None:
+        if verbose:
+            ensure_console_logging()
         self._scene_id = scene_id
         self._host = host
         self._port = port
@@ -299,6 +324,7 @@ class UnityStateServer:
         self._pcs.add(pc)
         pending_candidates = []
         remote_set = False
+        logger.info("signaling: client connected")
 
         @pc.on("connectionstatechange")
         async def _on_state():
@@ -323,6 +349,7 @@ class UnityStateServer:
                 kind = data.get("type")
 
                 if kind == "offer":
+                    logger.info("signaling: offer received")
                     await pc.setRemoteDescription(
                         RTCSessionDescription(sdp=data["sdp"], type="offer")
                     )
@@ -352,6 +379,7 @@ class UnityStateServer:
                     await websocket.send(
                         json.dumps({"type": pc.localDescription.type, "sdp": sdp})
                     )
+                    logger.info("signaling: answer sent, waiting for the peer")
 
                 elif kind == "candidate":
                     candidate = self._parse_candidate(data)
