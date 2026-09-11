@@ -82,6 +82,8 @@ def tracker_message(**overrides) -> str:
         "leftSecondary": False,
         "rightPrimary": False,
         "rightSecondary": False,
+        "leftStickClick": False,
+        "rightStickClick": False,
     }
     payload.update(overrides)
     return json.dumps(payload)
@@ -427,10 +429,18 @@ def test_button_poller() -> None:
     check("um grip sozinho nao reseta", poller.poll()["reset"] is False)
 
     poller.reset_status()
-    source.feed(tracker_message(leftPrimary=True, rightPrimary=True))
-    check("os dois A pedem drop", poller.poll()["drop"] is True)
+    source.feed(tracker_message(rightStickClick=True))
+    check("clique do analogico direito pede drop", poller.poll()["drop"] is True)
     check("drop e consumido uma vez", poller.take_drop_request() is True)
     check("drop nao repete", poller.take_drop_request() is False)
+
+    # Right A raises the base. Binding drop to it as well -- as an earlier
+    # version did, for want of reading the stick click Unity was already
+    # sending -- would drop the robot on every height adjustment.
+    poller.reset_status()
+    source.feed(tracker_message(rightPrimary=True))
+    check("A direito sozinho nao pede drop", poller.poll()["drop"] is False)
+    check("nem deixa pedido pendente", poller.take_drop_request() is False)
 
 
 def test_defaults_before_any_input() -> None:

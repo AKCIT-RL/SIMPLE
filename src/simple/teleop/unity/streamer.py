@@ -174,6 +174,9 @@ class UnityTeleData:
     right_ctrl_aButton: bool = False
     right_ctrl_bButton: bool = False
 
+    left_ctrl_thumbstick: bool = False
+    right_ctrl_thumbstick: bool = False
+
     left_ctrl_thumbstickValue: np.ndarray = field(
         default_factory=lambda: np.zeros(2, dtype=np.float64)
     )
@@ -249,6 +252,9 @@ class UnityTrackerSource:
             data.right_ctrl_aButton = bool(payload.get("rightPrimary", False))
             data.right_ctrl_bButton = bool(payload.get("rightSecondary", False))
 
+            data.left_ctrl_thumbstick = bool(payload.get("leftStickClick", False))
+            data.right_ctrl_thumbstick = bool(payload.get("rightStickClick", False))
+
             data.left_ctrl_thumbstickValue = np.array(
                 [
                     float(payload.get("leftStickX", 0.0)),
@@ -280,6 +286,8 @@ class UnityTrackerSource:
                 left_ctrl_bButton=data.left_ctrl_bButton,
                 right_ctrl_aButton=data.right_ctrl_aButton,
                 right_ctrl_bButton=data.right_ctrl_bButton,
+                left_ctrl_thumbstick=data.left_ctrl_thumbstick,
+                right_ctrl_thumbstick=data.right_ctrl_thumbstick,
                 left_ctrl_thumbstickValue=data.left_ctrl_thumbstickValue.copy(),
                 right_ctrl_thumbstickValue=data.right_ctrl_thumbstickValue.copy(),
             )
@@ -513,7 +521,7 @@ class UnityButtonPoller:
     and ``VuerDecoupledAgent`` both keep them at agent level for the same
     reason, and this mirrors their bindings.
 
-    Bindings, matching VuerDecoupledAgent:
+    Bindings, matching VuerDecoupledAgent exactly:
         drop robot   right thumbstick click
         reset env    both grips held together
 
@@ -533,9 +541,7 @@ class UnityButtonPoller:
         """Read the buttons once. Returns the edges seen this call."""
         data = self._source.snapshot()
 
-        # The thumbstick click is not in TrackerSender's payload yet; falling
-        # back to both A buttons keeps this usable until it is.
-        drop_now = bool(data.left_ctrl_aButton and data.right_ctrl_aButton)
+        drop_now = bool(data.right_ctrl_thumbstick)
         drop_edge = drop_now and not self._drop_last
         self._drop_last = drop_now
 
