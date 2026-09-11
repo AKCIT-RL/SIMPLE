@@ -180,7 +180,13 @@ def main(
     num_episodes: Annotated[int, typer.Option()] = 100,
     shard_size: Annotated[int, typer.Option()] = 100,
     dr_level: Annotated[int, typer.Option()] = 0,
-    record: Annotated[bool, typer.Option()] = False
+    record: Annotated[bool, typer.Option()] = False,
+    unity: Annotated[bool, typer.Option()] = False,
+    unity_host: Annotated[str, typer.Option()] = "0.0.0.0",
+    unity_port: Annotated[int, typer.Option()] = 8765,
+    unity_export_dir: Annotated[str, typer.Option()] = "data/unity_scene",
+    unity_publish_hz: Annotated[float, typer.Option()] = 60.0,
+    unity_ice_host: Annotated[str, typer.Option()] = "",
 ):
     assert sim_mode in ["mujoco"], f"Invalid sim_mode {sim_mode} for teleop."
     sim_cnt = 0
@@ -257,6 +263,30 @@ def main(
     # Read obj_names after first reset so layout is populated by domain randomization.
     obj_names = list(sonic_env.mujoco.mj_objects.keys())
 
+    # Optional Unity frontend: renders the scene as real geometry in the headset
+    # instead of a video feed of Mujoco's render. It only reads state, so it is
+    # independent of the agent and of recording.
+    #
+    # Built after the first reset on purpose: update_layout() compiles mjModel,
+    # and reset() is what calls it.
+    unity_bridge = None
+    if unity:
+        from simple.teleop.unity.bridge import UnityRenderBridge
+
+        unity_bridge = UnityRenderBridge(
+            sonic_env.mujoco,
+            out_dir=unity_export_dir,
+            host=unity_host,
+            port=unity_port,
+            publish_hz=unity_publish_hz,
+            ice_host=unity_ice_host or None,
+        )
+        print(
+            f"[Unity] cena exportada em {unity_export_dir} "
+            f"(scene_id 0x{unity_bridge.scene_id:08x}); "
+            f"aguardando cliente em ws://{unity_host}:{unity_port}"
+        )
+
     if record:
         # timestamp = datetime.now().strftime("%m%d%H%M%S")
         run_save_dir = (
@@ -311,6 +341,10 @@ def main(
                 # stabilized_printed = False
                 rec_state = RecordingState.WAITING_FOR_LANDING
                 initial_target_z = None
+                if unity_bridge is not None:
+                    # A reset can compile a new scene; take the re-export here
+                    # rather than mid-episode.
+                    unity_bridge.resync()
                 print("[TeleopDecoupled] Environment reset complete")
 
             with telemetry.timer("update_viewer"):
@@ -322,6 +356,12 @@ def main(
 
             with telemetry.timer("update_render"):
                 agent.update_render_caches(observation)
+
+            if unity_bridge is not None:
+                with telemetry.timer("unity_publish"):
+                    # Throttles itself to --unity-publish-hz, so calling every
+                    # step costs a clock read when it is not due.
+                    unity_bridge.tick()
 
             """ # --- Print once when robot first stabilizes ---
             if robot.stabilized and not stabilized_printed:
@@ -400,6 +440,8 @@ def main(
                         # stabilized_printed = False
                         rec_state = RecordingState.WAITING_FOR_LANDING
                         initial_target_z = None
+                        if unity_bridge is not None:
+                            unity_bridge.resync()
                         continue  # skip sleep / increment for this iteration
 
             elapsed = time.monotonic() - step_start
@@ -432,6 +474,9 @@ def main(
         # Ensure progress bar is closed
         if step_pbar is not None:
             step_pbar.close()
+        if unity_bridge is not None:
+            print(f"[Unity] {unity_bridge.stats()}")
+            unity_bridge.close()
         if exporter is not None:
             exporter.stop_video_writers()
             print(f"[Record] Done. {episodes_saved} episodes saved to {run_save_dir}")
