@@ -242,10 +242,24 @@ def main(
     control_dt = control_decimal * robot.sim_dt  # = 0.02 s (50 Hz)
 
     def _on_episode_reset():
-        """In recording mode, reset the WBC pipeline to a consistent initial pose,
-        skip elastic band drop, and engage the RL policy immediately."""
-        if not record:
-            return
+        """Put the robot in a usable state: on its feet, balancing, arms parked.
+
+        This used to run only under --record, which conflated two unrelated
+        things. Recording decides whether frames reach the disk. None of what
+        follows has anything to do with that: it releases the elastic band,
+        resets the WBC pipeline and engages the lower-body RL policy.
+
+        Without it the robot is half configured -- no balance policy, so it
+        collapses as soon as the viewer opens, then hangs from the band. The
+        teleop path then appears broken no matter which buttons the operator
+        presses, because get_action returns the band command and never reaches
+        the teleop one.
+
+        The teleop policy stays deactivated on purpose. The upper body holds
+        its default pose until the operator presses the activation button,
+        which is what stops the arms snapping to wherever the controllers
+        happen to be at connection time.
+        """
         if robot.elastic_band is not None:
             robot.elastic_band.enable = False
         agent._dropping = False
