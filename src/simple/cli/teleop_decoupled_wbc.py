@@ -189,8 +189,15 @@ def main(
     unity_publish_hz: Annotated[float, typer.Option()] = 60.0,
     unity_ice_host: Annotated[str, typer.Option()] = "",
     unity_unordered: Annotated[bool, typer.Option()] = False,
+    unity_teleop: Annotated[bool, typer.Option()] = False,
 ):
     assert sim_mode in ["mujoco"], f"Invalid sim_mode {sim_mode} for teleop."
+    # Without --unity there is no channel to carry the operator's poses, so
+    # the agent would hold its rest pose forever with nothing to explain why.
+    assert not (unity_teleop and not unity), (
+        "--unity-teleop needs --unity: the tracker channel that carries the "
+        "operator's poses is opened by the Unity bridge."
+    )
     sim_cnt = 0
 
     sonic_config = _load_sonic_config()
@@ -212,7 +219,18 @@ def main(
     assert sonic_env.spec is not None
     assert isinstance(robot, G1Sonic)
 
-    agent = VuerDecoupledAgent(robot)
+    # The Unity client can act as the XR frontend for input as well as for
+    # rendering. The source is created first because both the agent (which
+    # reads from it) and the bridge (which feeds it) need the same one.
+    unity_source = None
+    if unity_teleop:
+        from simple.agents.unity_decoupled_agent import UnityDecoupledAgent
+        from simple.teleop.unity.streamer import UnityTrackerSource
+
+        unity_source = UnityTrackerSource()
+        agent = UnityDecoupledAgent(robot, unity_source)
+    else:
+        agent = VuerDecoupledAgent(robot)
     agent.num_episodes = num_episodes
 
     # --- Recording setup ---
@@ -283,6 +301,8 @@ def main(
 
         def _on_tracker(message):
             tracker_seen["n"] += 1
+            if unity_source is not None:
+                unity_source.feed(message)
             if tracker_seen["n"] in (1, 50, 500):
                 size = len(message) if hasattr(message, "__len__") else "?"
                 print(f"[Unity] tracker: {tracker_seen['n']} mensagens recebidas "
