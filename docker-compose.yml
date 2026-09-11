@@ -14,7 +14,7 @@ x-default-isaacsim-volumes: &default-isaacsim-volumes
 services:
   isaac-sim: &isaac-sim
     # user: ${MY_UID}:${MY_GID}
-    image: simple:${DATE:-latest}
+    image: simple-teleoperation:${DATE:-latest}
     build:
       context: .
       dockerfile: Dockerfile
@@ -65,7 +65,7 @@ services:
     command: [] 
 
   gpu-test:
-    image: simple:${DATE:-latest}
+    image: simple-teleoperation:${DATE:-latest}
     command: /workspace/SIMPLE/.venv/bin/python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.device_count())"
     environment:
       - NVIDIA_VISIBLE_DEVICES=${GPUs:-0}  # which GPUs to expose

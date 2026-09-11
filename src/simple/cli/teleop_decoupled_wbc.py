@@ -19,7 +19,8 @@ import simple.envs as _  # import all envs
 if TYPE_CHECKING:
     from simple.envs.sonic_loco_manip import SonicLocoManipEnv
 
-from simple.agents.pico_decoupled_agent import PicoDecoupledAgent
+# from simple.agents.pico_decoupled_agent import PicoDecoupledAgent  # PICO (XRoboToolkit)
+from simple.agents.vuer_decoupled_agent import VuerDecoupledAgent
 from gear_sonic.utils.mujoco_sim.configs import SimLoopConfig
 from simple.robots.g1_sonic import G1Sonic
 
@@ -211,7 +212,7 @@ def main(
     assert sonic_env.spec is not None
     assert isinstance(robot, G1Sonic)
 
-    agent = PicoDecoupledAgent(robot)
+    agent = VuerDecoupledAgent(robot)
     agent.num_episodes = num_episodes
 
     # --- Recording setup ---
@@ -508,3 +509,6 @@ def typer_main():
 
 if __name__ == "__main__":
     typer.run(main)
+
+
+# python src/simple/cli/teleop_decoupled_wbc.py simple/G1WholebodyLocomotionPickBetweenTablesTeleop-v0 --target=graspnet1b:0 --sim-mode=mujoco --record --no-headless
