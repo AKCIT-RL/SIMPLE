@@ -305,18 +305,37 @@ async def run_test(args) -> int:
                 sent += 1
             await asyncio.sleep(0.005)
 
+        # The channel sends two size probes when it opens, so separate those
+        # from the pose stream before counting. Their arrival is itself worth
+        # asserting: they are the diagnostic used to tell a size problem from a
+        # dead channel on a real link, and they are useless if they never land.
+        state_size = protocol.packet_size(model.nbody)
+        probes = [p for p in client.received if len(p) != state_size]
+        real = [p for p in client.received if len(p) == state_size]
+
         for _ in range(100):
-            if len(client.received) >= sent:
+            if len(real) >= sent:
                 break
             await asyncio.sleep(0.05)
+            real = [p for p in client.received if len(p) == state_size]
+            probes = [p for p in client.received if len(p) != state_size]
 
         check(
+            "as duas sondas de tamanho chegaram",
+            len(probes) == 2,
+            f"{len(probes)} de 2 ({[len(p) for p in probes]} bytes)",
+        )
+        check(
+            "sonda pequena decodifica como frame vazio",
+            any(len(p) == protocol.HEADER_SIZE for p in probes),
+        )
+        check(
             "pacotes entregues",
-            len(client.received) == sent,
-            f"{len(client.received)} de {sent} enviados",
+            len(real) == sent,
+            f"{len(real)} de {sent} enviados",
         )
 
-        decoded = [protocol.decode_state(p) for p in client.received]
+        decoded = [protocol.decode_state(p) for p in real]
         check(
             "todos com o scene_id correto",
             all(d["scene_id"] == scene_id for d in decoded),
