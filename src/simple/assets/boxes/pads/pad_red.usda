@@ -1,0 +1,23 @@
+#usda 1.0
+(
+    defaultPrim = "pad_red"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+# Flat colour ZONE marker for the Isaac render stage (MuJoCo uses pad_red.xml).
+# A unit cube scaled to 0.18 x 0.18 x 0.004 m; the colour is baked as
+# displayColor (the articulated/static path does not rgba-bind a material).
+# NOTE: verify the pad colour renders in Isaac; if displayColor is ignored in
+# your Isaac build, author a small OmniPBR material here instead.
+def Xform "pad_red"
+{
+    def Cube "geom"
+    {
+        double size = 1
+        float3[] extent = [(-0.5, -0.5, -0.5), (0.5, 0.5, 0.5)]
+        color3f[] primvars:displayColor = [(0.90, 0.02, 0.02)]
+        double3 xformOp:scale = (0.18, 0.18, 0.004)
+        uniform token[] xformOpOrder = ["xformOp:scale"]
+    }
+}

@@ -90,7 +90,10 @@ class DexHandEEFController(Controller):
     @property
     def action_space(self) -> spaces.Space:
         dof = len(self.cfg.joint_names)
-        joint_limits = np.array([[-np.pi, np.pi]]*dof, dtype=np.float32)
+        # reshape keeps a (dof, 2) shape even when dof == 0 (the fixed/rubber hand
+        # uses an empty eef controller); otherwise np.array([]) is 1-D and the
+        # [:, 0]/[:, 1] indexing below raises. dof == 0 -> an empty action space.
+        joint_limits = np.array([[-np.pi, np.pi]]*dof, dtype=np.float32).reshape(dof, 2)
         low, high = joint_limits[:, 0], joint_limits[:, 1]
         return spaces.Box(low, high, dtype=np.float32)
 

@@ -1,0 +1,13 @@
+<mujoco model="pad_red">
+  <!-- Flat colour ZONE marker for the colour-box sorting task. Static (attached
+       as a 0-joint articulated asset, welded at a frame), and VISUAL ONLY:
+       contype/conaffinity=0 so boxes slide across it without colliding. The
+       colour is baked into the geom rgba here (MuJoCo); the Isaac render uses
+       the matching pad_red.usda. Half-extents 0.09 x 0.09 x 0.002 m. -->
+  <worldbody>
+    <body name="pad_red">
+      <geom name="pad_red_geom" type="box" size="0.09 0.09 0.002"
+            rgba="0.90 0.02 0.02 1" contype="0" conaffinity="0"/>
+    </body>
+  </worldbody>
+</mujoco>

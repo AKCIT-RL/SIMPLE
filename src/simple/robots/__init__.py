@@ -16,7 +16,9 @@ from .g1_inspire_wholebody import G1InspireWholebody
 
 try:
     from .g1_sonic import G1Sonic
+    from .g1_sonic_fixedhand import G1SonicFixedHand
 except ModuleNotFoundError:
     # Keep the core SIMPLE eval path importable when sonic-only dependencies
     # such as pinocchio are not installed in the current environment.
     G1Sonic = None
+    G1SonicFixedHand = None

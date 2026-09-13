@@ -119,18 +119,31 @@ def _build_frame(agent, obj_names: list[str], observation, privileged_info, acti
     # torso_rpy_command = action_q[waist_indices]
 
     mjcf_to_natural_order = lambda q: np.concatenate([q[:3], q[5:7], q[3:5]])
+    # The fixed/rubber-hand robot reports no hand proprio (num_hand_dof == 0), so
+    # record its hand columns as zeros -- the dataset keeps the full 43-DOF WBC
+    # layout (schema-compatible with the hand-robot datasets).
+    has_hands = "left_hand_q" in proprio
+    left_hand_q  = mjcf_to_natural_order(proprio["left_hand_q"])  if has_hands else np.zeros(7)
+    right_hand_q = mjcf_to_natural_order(proprio["right_hand_q"]) if has_hands else np.zeros(7)
     proprio_q = rm.get_configuration_from_actuated_joints(
         body_actuated_joint_values=proprio["body_q"],
-        left_hand_actuated_joint_values=mjcf_to_natural_order(proprio["left_hand_q"]),
-        right_hand_actuated_joint_values=mjcf_to_natural_order(proprio["right_hand_q"]),
+        left_hand_actuated_joint_values=left_hand_q,
+        right_hand_actuated_joint_values=right_hand_q,
     )
     proprio_joints = dict(zip(rm.joint_names, proprio_q))
     from simple.robots.g1_sonic import WHOLE_BODY_JOINTS
-    assert np.allclose(observation["joint_qpos"], np.array([proprio_joints[joint] for joint in WHOLE_BODY_JOINTS], dtype=np.float32))
+    obs_state = np.array([proprio_joints[joint] for joint in WHOLE_BODY_JOINTS], dtype=np.float64)
+    if has_hands:
+        # sanity check preserved for the hand robot: the env's 43-DOF joint_qpos
+        # must match the reconstructed whole-body proprio.
+        assert np.allclose(observation["joint_qpos"], obs_state.astype(np.float32))
 
     frame = {
         "observation.images.ego_view": observation["head_stereo_left"],
-        "observation.state": np.asarray(observation["joint_qpos"], dtype=np.float64), # obs_state
+        "observation.state": (
+            np.asarray(observation["joint_qpos"], dtype=np.float64)
+            if has_hands else obs_state
+        ),  # 43-DOF whole-body qpos (hand columns zeroed for the fixed hand)
         "observation.eef_state": np.asarray(action["action_eef"], dtype=np.float64), # FIXME
         "action": np.asarray(action_q, dtype=np.float64),
         "action.eef": np.asarray(action["action_eef"], dtype=np.float64), # 1-cycle delayed teleop eef
@@ -276,12 +289,22 @@ def main(
         run_save_dir = (
             f"{os.path.abspath(save_dir)}/{sonic_env.spec.id}/level-{dr_level}" #_{timestamp}
         )
+        # The dataset schema is the full 43-DOF WBC layout (from
+        # agent._dwbc_robot_model). The fixed/rubber-hand robot only owns the 29
+        # body joints, so fall back to the 43-DOF WHOLE_BODY_JOINTS names for the
+        # observation.state schema -- the hand columns are recorded as zeros in
+        # _build_frame, keeping the fixed-hand dataset compatible with the
+        # hand-robot datasets.
+        from simple.robots.g1_sonic import WHOLE_BODY_JOINTS
+        schema_joint_names = (
+            robot.joint_names if robot.num_hand_dof > 0 else WHOLE_BODY_JOINTS
+        )
         exporter = _init_exporter(
             run_save_dir,
-            task.instruction, 
-            agent._dwbc_robot_model, 
+            task.instruction,
+            agent._dwbc_robot_model,
             obj_names,
-            robot.joint_names
+            schema_joint_names
         )
         print(f"\n[Record] Exporter initialized, saving to {run_save_dir}")
         print(f"[Record] Recording {len(obj_names)} objects: {obj_names}")

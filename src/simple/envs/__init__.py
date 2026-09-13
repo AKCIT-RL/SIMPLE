@@ -469,6 +469,16 @@ register(
     entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
     kwargs={"task":"g1_industrial_sorting_teleop"},
 )
+register(
+    id="simple/G1FixedHandColorBoxSortTeleop-v0",
+    entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
+    kwargs={"task":"g1_fixedhand_color_box_sort_teleop"},
+)
+register(
+    id="simple/G1FixedHandToteToAdjacentTableTeleop-v0",
+    entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
+    kwargs={"task":"g1_fixedhand_tote_to_adjacent_table_teleop"},
+)
 
 
 # def task_register(task):

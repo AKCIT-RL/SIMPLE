@@ -1,0 +1,9 @@
+<mujoco model="pad_green">
+  <!-- Flat colour ZONE marker (see pad_red.xml). Static, visual only. -->
+  <worldbody>
+    <body name="pad_green">
+      <geom name="pad_green_geom" type="box" size="0.09 0.09 0.002"
+            rgba="0.02 0.70 0.05 1" contype="0" conaffinity="0"/>
+    </body>
+  </worldbody>
+</mujoco>

@@ -140,8 +140,13 @@ class VuerDecoupledAgent(SonicWbcAgent):
 
         supp = self._dwbc_robot_model.supplemental_info
         assert supp.body_actuated_joints   == self.robot.joint_names[:29]
-        assert supp.left_hand_actuated_joints  == self.robot.hand_names[:7]
-        assert supp.right_hand_actuated_joints == self.robot.hand_names[7:14]
+        # The fixed/rubber-hand robot has no finger joints (num_hand_dof == 0).
+        # The WBC pipeline still runs on the full 43-DOF model and produces hand
+        # targets; the physical robot just ignores them (apply_action guards). So
+        # only sanity-check the hand-joint mapping when the sim robot has hands.
+        if self.robot.num_hand_dof > 0:
+            assert supp.left_hand_actuated_joints  == self.robot.hand_names[:7]
+            assert supp.right_hand_actuated_joints == self.robot.hand_names[7:14]
 
         dwbc_config = ControlLoopConfig(
             enable_waist=enable_waist,

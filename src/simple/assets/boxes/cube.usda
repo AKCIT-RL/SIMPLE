@@ -1,0 +1,17 @@
+#usda 1.0
+(
+    defaultPrim = "cube"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+# 6 cm cube for the Isaac render stage. Referenced by the box colour variants
+# (boxes.py); the colour is bound at render time from asset.rgba via
+# IsaacSimSimulator._bind_color_material, so no material is authored here.
+def Xform "cube"
+{
+    def Cube "geom"
+    {
+        double size = 0.06
+    }
+}
