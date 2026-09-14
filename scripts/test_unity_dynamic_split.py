@@ -64,10 +64,15 @@ class FakeModel:
     guarantees.
     """
 
-    def __init__(self, bodies):
+    def __init__(self, bodies, mocap=()):
         self.nbody = len(bodies)
         self.body_parentid = np.array([p for p, _ in bodies], dtype=np.int32)
         self.body_dofnum = np.array([d for _, d in bodies], dtype=np.int32)
+        # -1 everywhere except the mocap bodies, as MuJoCo fills it.
+        mocapid = np.full(len(bodies), -1, dtype=np.int32)
+        for slot, body in enumerate(mocap):
+            mocapid[body] = slot
+        self.body_mocapid = mocapid
 
 
 def tabletop_scene():
@@ -136,6 +141,39 @@ def test_chain_walk() -> None:
     check("objeto livre e dinamico", is_dynamic_body(model, index["tote_0"]))
 
 
+def test_mocap_bodies_are_streamed() -> None:
+    """A mocap body has no joints but is moved anyway, by direct assignment.
+
+    The chain walk alone calls it static, and the symptom is a body frozen at
+    its manifest pose while the simulator moves it -- indistinguishable from a
+    stuck object until someone reads the exporter.
+    """
+    print("\n[2] Corpos mocap entram no stream")
+
+    model, names = tabletop_scene()
+    index = {name: i for i, name in enumerate(names)}
+    target = index["pad"]
+
+    check("sem mocap, o pad e estatico", not is_dynamic_body(model, target))
+
+    with_mocap = FakeModel(
+        list(zip(model.body_parentid.tolist(), model.body_dofnum.tolist())),
+        mocap=[target],
+    )
+    check(
+        "declarado mocap, passa a ser transmitido",
+        is_dynamic_body(with_mocap, target),
+    )
+    check(
+        "e entra na lista de pacote",
+        target in dynamic_body_indices(with_mocap),
+    )
+    check(
+        "a mobilia restante continua fora",
+        index["table1"] not in dynamic_body_indices(with_mocap),
+    )
+
+
 def test_selection_is_ordered_and_complete() -> None:
     print("\n[2] Selecao preserva a ordem do modelo")
 
@@ -192,6 +230,7 @@ def test_packet_fits_the_mtu() -> None:
 
 def main() -> int:
     test_chain_walk()
+    test_mocap_bodies_are_streamed()
     test_selection_is_ordered_and_complete()
     test_packet_fits_the_mtu()
 

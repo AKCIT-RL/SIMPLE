@@ -125,7 +125,18 @@ def is_dynamic_body(model, body_id: int) -> bool:
     MuJoCo offers ``body_weldid`` as a shortcut for the same question, but the
     walk says what it means without the reader having to recall what a weld group
     is, and it runs once per episode over a few dozen bodies.
+
+    Mocap bodies are the exception the walk alone gets wrong: they carry no
+    joints and would read as welded to the world, but their pose is written
+    directly into ``mjData.mocap_pos`` every step. Nothing in this scene uses one
+    today, and that is exactly why the guard is here -- the failure is a body
+    frozen at its manifest pose while the simulator moves it, which looks like a
+    stuck object rather than a classification bug.
     """
+    mocap_id = getattr(model, "body_mocapid", None)
+    if mocap_id is not None and int(mocap_id[body_id]) >= 0:
+        return True
+
     while body_id > 0:
         if int(model.body_dofnum[body_id]) > 0:
             return True
