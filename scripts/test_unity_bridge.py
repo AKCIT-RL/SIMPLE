@@ -38,7 +38,35 @@ import mujoco
 from simple.teleop.unity.bridge import UnityRenderBridge
 from simple.teleop.unity.scene_export import dynamic_body_indices
 
-DEFAULT_MJCF = r"C:\Users\muril\Teleop6\Assets\Mujoco Unitree g1\scene.xml"
+# SIMPLE's own G1, resolved through the same helper the engine uses, so this
+# runs on any checkout instead of naming one machine's disk. The scripts are
+# meant to be run on the simulation box, which is never the one they were
+# written on.
+DEFAULT_MJCF_REL = "robots/g1_sonic/g1_29dof_with_hand.xml"
+
+
+def default_mjcf():
+    """Where this checkout keeps the G1, or None if it cannot be resolved."""
+    try:
+        from simple.utils import resolve_data_path
+
+        return resolve_data_path(DEFAULT_MJCF_REL, auto_download=True)
+    except Exception:
+        return None
+
+
+def require_mjcf(path):
+    """Fall back to the bundled G1, and say what to pass when there is none."""
+    resolved = path or default_mjcf()
+    if not resolved:
+        raise SystemExit(
+            "Nao achei um modelo para testar.\n"
+            f"  Esperado o G1 do SIMPLE em: {DEFAULT_MJCF_REL}\n"
+            "  Passe um explicitamente com --mjcf /caminho/scene.xml"
+        )
+    return resolved
+
+
 
 
 class Failure(Exception):
@@ -113,8 +141,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--mjcf", default=DEFAULT_MJCF)
+    parser.add_argument("--mjcf", default=None)
     args = parser.parse_args()
+    args.mjcf = require_mjcf(args.mjcf)
 
     if not os.path.isfile(args.mjcf):
         print(f"MJCF nao encontrado: {args.mjcf}", file=sys.stderr)
