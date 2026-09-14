@@ -35,10 +35,21 @@ happens on the reset boundary rather than mid-episode.
 import logging
 import time
 
-from .protocol import scene_id_from_names
-from .scene_export import body_names, export_scene, world_poses
+from .protocol import packet_size, scene_id_from_names
+from .scene_export import (
+    body_names,
+    dynamic_body_indices,
+    export_scene,
+    world_poses,
+)
 
 logger = logging.getLogger(__name__)
+
+# What one SCTP payload can carry over a 1280-byte path MTU -- Tailscale's,
+# which is the link this runs on. The rest goes to IP, UDP, DTLS and SCTP
+# headers. Measured rather than derived: above this the channel carried nothing
+# at all, instead of carrying it slowly.
+MTU_SAFE_PAYLOAD = 1195
 
 DEFAULT_PUBLISH_HZ = 60.0
 DEFAULT_EXPORT_DIR = "data/unity_scene"
@@ -91,6 +102,7 @@ class UnityRenderBridge:
         self._next_publish = 0.0
 
         self._model = None
+        self._dynamic = None
         self._scene_id = None
         self.exports = 0
 
@@ -129,15 +141,39 @@ class UnityRenderBridge:
         # Without it the model could be freed and a new one land at the same
         # address, and the scene change would go unnoticed.
         self._model = model
+        # Packet order, fixed here so tick() never recomputes it.
+        self._dynamic = list(manifest["dynamic"])
         self.exports += 1
+        streamed = len(self._dynamic)
+        total = len(manifest["bodies"])
         logger.info(
-            "exported scene to %s (%d bodies, %d geoms, %d meshes, scene_id 0x%08x)",
+            "exported scene to %s (%d bodies, %d streamed, %d geoms, %d meshes, "
+            "scene_id 0x%08x)",
             self._out_dir,
-            len(manifest["bodies"]),
+            total,
+            streamed,
             len(manifest["geoms"]),
             len(manifest["meshes"]),
             manifest["scene_id"],
         )
+        # The packet has to survive the path's MTU in one piece. Saying so at
+        # export time beats discovering it as a channel that silently carries
+        # nothing, which is exactly how this failed before.
+        size = packet_size(streamed)
+        logger.info(
+            "state packet is %d bytes for %d bodies (%d static bodies skipped)",
+            size,
+            streamed,
+            total - streamed,
+        )
+        if size > MTU_SAFE_PAYLOAD:
+            logger.warning(
+                "state packet of %d bytes exceeds the %d usable over a 1280-byte "
+                "MTU; it will be fragmented, and unreliable channels drop "
+                "fragmented frames outright",
+                size,
+                MTU_SAFE_PAYLOAD,
+            )
         return manifest["scene_id"]
 
     def resync(self) -> bool:
@@ -191,7 +227,9 @@ class UnityRenderBridge:
         if not self._server.connected:
             return False
 
-        positions, quaternions = world_poses(self._sim.mjModel, self._sim.mjData)
+        positions, quaternions = world_poses(
+            self._sim.mjModel, self._sim.mjData, self._dynamic
+        )
         return self._server.publish(int(self._sim.render_step), positions, quaternions)
 
     def stats(self) -> dict:
@@ -206,5 +244,13 @@ class UnityRenderBridge:
 
 
 def scene_id_for(simulator) -> int:
-    """Scene id a simulator's current model would export as, without exporting."""
-    return scene_id_from_names(body_names(simulator.mjModel))
+    """Scene id a simulator's current model would export as, without exporting.
+
+    Hashes the streamed bodies only, matching what ``export_scene`` writes. A
+    hash over every body would be stable across a change to the static/dynamic
+    split while the packet layout underneath it moved -- the one case the id
+    exists to catch.
+    """
+    model = simulator.mjModel
+    names = body_names(model)
+    return scene_id_from_names([names[i] for i in dynamic_body_indices(model)])

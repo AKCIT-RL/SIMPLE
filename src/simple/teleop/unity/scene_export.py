@@ -114,6 +114,34 @@ def select_render_geoms(model, include_collision: bool = False) -> dict:
     return selected
 
 
+def is_dynamic_body(model, body_id: int) -> bool:
+    """True if this body can move -- it or an ancestor carries a degree of freedom.
+
+    Walking the parent chain rather than reading ``body_dofnum`` alone, because a
+    body with no joint of its own still moves when something above it does: every
+    link of the robot's arm past the shoulder has zero DOFs and is carried by the
+    joints beneath it.
+
+    MuJoCo offers ``body_weldid`` as a shortcut for the same question, but the
+    walk says what it means without the reader having to recall what a weld group
+    is, and it runs once per episode over a few dozen bodies.
+    """
+    while body_id > 0:
+        if int(model.body_dofnum[body_id]) > 0:
+            return True
+        body_id = int(model.body_parentid[body_id])
+    return False
+
+
+def dynamic_body_indices(model) -> list:
+    """Indices of the bodies worth streaming, in model order.
+
+    The world body is index 0 and never moves, so the walk above excludes it
+    naturally rather than by special case.
+    """
+    return [i for i in range(model.nbody) if is_dynamic_body(model, i)]
+
+
 def body_names(model) -> list:
     """Body names in model order. Unnamed bodies get a stable positional name."""
     import mujoco
@@ -223,15 +251,36 @@ def export_scene(model, out_dir: str, include_collision: bool = False) -> dict:
         name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_MESH, i)
         mesh_names.append(name if name else f"mesh_{i}")
 
+    # Static bodies are placed once from the manifest and never streamed, so
+    # their world pose has to travel with it. Reading it from a throwaway MjData
+    # rather than composing the parent chain by hand: these bodies have no DOF in
+    # their chain by definition, so qpos cannot move them and MuJoCo's own
+    # kinematics answer exactly, without this module growing a second opinion
+    # about quaternion conventions.
+    static_data = mujoco.MjData(model)
+    mujoco.mj_forward(model, static_data)
+    static_pos = positions_to_unity(static_data.xpos)
+    static_rot = quaternions_to_unity(static_data.xquat)
+
+    dynamic = dynamic_body_indices(model)
+    dynamic_slots = {body: slot for slot, body in enumerate(dynamic)}
+
     bodies = []
     for i in range(model.nbody):
-        bodies.append(
-            {
-                "index": i,
-                "name": names[i],
-                "parent": int(model.body_parentid[i]),
-            }
-        )
+        entry = {
+            "index": i,
+            "name": names[i],
+            "parent": int(model.body_parentid[i]),
+        }
+        slot = dynamic_slots.get(i)
+        if slot is None:
+            # Pose is final. Carrying it here is what lets it leave the stream.
+            entry["pos"] = static_pos[i].tolist()
+            entry["rot"] = static_rot[i].tolist()
+        else:
+            # Where this body's pose sits in each state packet.
+            entry["slot"] = slot
+        bodies.append(entry)
 
     geoms = []
     used_meshes = set()
@@ -291,13 +340,18 @@ def export_scene(model, out_dir: str, include_collision: bool = False) -> dict:
         "format": SCENE_FORMAT,
         "version": SCENE_FORMAT_VERSION,
         "coordinate_space": "unity",
-        "scene_id": scene_id_from_names(names),
+        "scene_id": scene_id_from_names([names[i] for i in dynamic]),
         # Body poses arrive in world space, so the recommended Unity layout is a
         # flat set of GameObjects under one scene root. Nesting them by `parent`
         # and then assigning world poses per frame would work but does the
         # kinematics twice for nothing; `parent` is here for inspection and for
         # grouping in the hierarchy view.
         "pose_space": "world",
+        # Which bodies the state channel carries, in packet order. Everything
+        # else in `bodies` is placed from its own pos/rot and never moves again.
+        # The split is the difference between a packet that fits in one datagram
+        # and one that does not: a tabletop scene is mostly furniture.
+        "dynamic": dynamic,
         "bodies": bodies,
         "geoms": geoms,
         "meshes": meshes,
@@ -309,15 +363,23 @@ def export_scene(model, out_dir: str, include_collision: bool = False) -> dict:
     return manifest
 
 
-def world_poses(model, data):
-    """Read every body's world pose, converted to Unity space.
+def world_poses(model, data, indices=None):
+    """Read body world poses, converted to Unity space.
 
     Args:
         model: compiled ``mujoco.MjModel``.
         data: ``mujoco.MjData`` with forward kinematics already evaluated. A
             ``mj_step`` leaves ``xpos``/``xquat`` current; after writing qpos by
             hand, call ``mj_forward`` first.
+        indices: bodies to read, in the order they should appear on the wire.
+            Defaults to every body. Pass ``dynamic_body_indices(model)`` to skip
+            the ones the manifest already placed.
     Returns:
-        ``(positions, quaternions)`` of shape ``(nbody, 3)`` and ``(nbody, 4)``.
+        ``(positions, quaternions)`` of shape ``(n, 3)`` and ``(n, 4)``, where n
+        is ``len(indices)`` or ``nbody``.
     """
-    return positions_to_unity(data.xpos), quaternions_to_unity(data.xquat)
+    positions = positions_to_unity(data.xpos)
+    quaternions = quaternions_to_unity(data.xquat)
+    if indices is None:
+        return positions, quaternions
+    return positions[indices], quaternions[indices]

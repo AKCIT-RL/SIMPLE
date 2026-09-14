@@ -36,6 +36,7 @@ sys.path.insert(
 import mujoco
 
 from simple.teleop.unity.bridge import UnityRenderBridge
+from simple.teleop.unity.scene_export import dynamic_body_indices
 
 DEFAULT_MJCF = r"C:\Users\muril\Teleop6\Assets\Mujoco Unitree g1\scene.xml"
 
@@ -120,6 +121,9 @@ def main() -> int:
         return 2
 
     model = mujoco.MjSpec.from_file(args.mjcf).compile()
+    # Only bodies that can move are streamed, so this -- not model.nbody -- is
+    # the count every packet should carry.
+    n_dynamic = len(dynamic_body_indices(model))
     sim = StubSimulator(model)
 
     with tempfile.TemporaryDirectory(prefix="simple_unity_bridge_") as out_dir:
@@ -149,8 +153,8 @@ def main() -> int:
             )
             check(
                 "contagem de bodies correta",
-                all(n == model.nbody for _, _, n in stub.published),
-                f"{model.nbody} bodies",
+                all(n == n_dynamic for _, _, n in stub.published),
+                f"{n_dynamic} de {model.nbody} bodies",
             )
             check(
                 "frame vem do render_step do simulador",

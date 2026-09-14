@@ -46,7 +46,11 @@ import websockets
 from aiortc import RTCPeerConnection, RTCSessionDescription
 
 from simple.teleop.unity import protocol
-from simple.teleop.unity.scene_export import export_scene, world_poses
+from simple.teleop.unity.scene_export import (
+    dynamic_body_indices,
+    export_scene,
+    world_poses,
+)
 from simple.teleop.unity.webrtc_state import (
     SAFE_PAYLOAD_BYTES,
     UnityStateServer,
@@ -270,6 +274,8 @@ async def run_test(args) -> int:
     with tempfile.TemporaryDirectory(prefix="simple_unity_") as tmp:
         manifest = export_scene(model, tmp)
     scene_id = manifest["scene_id"]
+    # Packet order. Static bodies were placed from the manifest and are absent.
+    dynamic = dynamic_body_indices(model)
     print(f"Modelo   : {model.nbody} bodies, scene_id 0x{scene_id:08x}")
 
     tracker_messages = []
@@ -306,13 +312,13 @@ async def run_test(args) -> int:
         )
 
         print("\n[2] Round trip de poses reais do G1")
-        pos, quat = world_poses(model, data)
+        pos, quat = world_poses(model, data, dynamic)
         sent = 0
         for frame in range(args.frames):
             # Nudge the model so consecutive frames differ.
             data.qpos[: model.nq] += 0.001
             mujoco.mj_forward(model, data)
-            pos, quat = world_poses(model, data)
+            pos, quat = world_poses(model, data, dynamic)
             if server.publish(frame, pos, quat):
                 sent += 1
             await asyncio.sleep(0.005)
@@ -321,7 +327,7 @@ async def run_test(args) -> int:
         # from the pose stream before counting. Their arrival is itself worth
         # asserting: they are the diagnostic used to tell a size problem from a
         # dead channel on a real link, and they are useless if they never land.
-        state_size = protocol.packet_size(model.nbody)
+        state_size = protocol.packet_size(len(dynamic))
         probes = [p for p in client.received if len(p) != state_size]
         real = [p for p in client.received if len(p) == state_size]
 
@@ -354,8 +360,8 @@ async def run_test(args) -> int:
         )
         check(
             "contagem de bodies correta",
-            all(len(d["positions"]) == model.nbody for d in decoded),
-            f"{model.nbody} bodies",
+            all(len(d["positions"]) == len(dynamic) for d in decoded),
+            f"{len(dynamic)} bodies",
         )
 
         last = decoded[-1]
@@ -396,7 +402,7 @@ async def run_test(args) -> int:
     await asyncio.sleep(0.5)  # let the server notice the peer went away
     try:
         result = server.publish(
-            999, np.zeros((model.nbody, 3)), np.zeros((model.nbody, 4))
+            999, np.zeros((len(dynamic), 3)), np.zeros((len(dynamic), 4))
         )
         raised = False
     except Exception as exc:  # noqa: BLE001

@@ -34,6 +34,13 @@ the physics.
 The cost is bandwidth: 28 bytes per body rather than 4 bytes per joint. For a
 31-body G1 that is 884 bytes per frame, about 53 KB/s at 60 Hz -- roughly an
 order of magnitude below the ~500 KB/s the stereo video path consumes today.
+
+Only bodies that can actually move are sent. A tabletop scene is mostly
+furniture -- tables, pads, the ground -- welded to the world and identical in
+every frame, and the manifest places those once. This is not only thrift: the
+packet has to fit in one datagram, and Tailscale's 1280-byte MTU leaves room
+for about 42 bodies. Spending those slots on a table that never moves is what
+puts a scene over the edge.
 """
 
 import struct
@@ -41,7 +48,13 @@ import struct
 import numpy as np
 
 MAGIC = b"SUST"
-VERSION = 1
+
+# 2: the packet carries only the bodies the manifest lists under "dynamic", so
+# slot k means the k-th of those rather than body k. A client reading v1
+# semantics from a v2 packet would pose the wrong bodies and look plausible
+# doing it, which is what the version check is for -- the scene_id alone would
+# not catch it, since the same scene can be encoded either way.
+VERSION = 2
 HEADER_FORMAT = "<4sHHIIHH"
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 BODY_SIZE = 7 * 4

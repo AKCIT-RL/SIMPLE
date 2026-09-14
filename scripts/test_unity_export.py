@@ -47,6 +47,7 @@ from simple.teleop.unity.scene_export import (
     body_names,
     export_scene,
     is_visual_geom,
+    dynamic_body_indices,
     world_poses,
 )
 
@@ -242,8 +243,12 @@ def test_reassembly(model, data, manifest) -> None:
 
 def test_protocol(model, data, manifest) -> None:
     print("\n[6] Round-trip do protocolo")
-    pos, quat = world_poses(model, data)
-    scene_id = protocol.scene_id_from_names(body_names(model))
+    # Only the streamed bodies: static ones were placed from the manifest, and
+    # both the packet and the scene_id are over that subset.
+    dynamic = dynamic_body_indices(model)
+    names = body_names(model)
+    pos, quat = world_poses(model, data, dynamic)
+    scene_id = protocol.scene_id_from_names([names[i] for i in dynamic])
     check(
         "scene_id do manifesto bate",
         manifest["scene_id"] == scene_id,
@@ -255,8 +260,13 @@ def test_protocol(model, data, manifest) -> None:
     )
     check(
         "tamanho do pacote confere",
-        len(packet) == protocol.packet_size(model.nbody),
-        f"{len(packet)} bytes para {model.nbody} bodies",
+        len(packet) == protocol.packet_size(len(dynamic)),
+        f"{len(packet)} bytes para {len(dynamic)} de {model.nbody} bodies",
+    )
+    check(
+        "o split retirou a mobilia do stream",
+        len(dynamic) < model.nbody,
+        f"{model.nbody - len(dynamic)} estaticos",
     )
 
     decoded = protocol.decode_state(packet)
