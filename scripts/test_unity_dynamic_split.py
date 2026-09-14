@@ -36,7 +36,7 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
 )
 
-from simple.teleop.unity.protocol import packet_size
+from simple.teleop.unity.protocol import packet_size, scene_id_from_bodies
 from simple.teleop.unity.scene_export import dynamic_body_indices, is_dynamic_body
 
 failures = 0
@@ -205,9 +205,55 @@ def test_selection_is_ordered_and_complete() -> None:
     )
 
 
+def test_scene_id_moves_with_the_scene() -> None:
+    """The id has to move for both kinds of change, and each was missed once.
+
+    Hashing only the streamed names let a new episode add a static prop without
+    moving the id: the dynamic list was untouched, so the client kept the old
+    geometry while the poses it received stayed valid, and nothing noticed.
+    That is a real regression this caught.
+
+    Hashing only the names misses the mirror case: the same bodies split
+    differently moves every slot without touching a name.
+    """
+    print("\n[4] O scene_id acompanha a cena")
+
+    names = ["world", "table", "pelvis", "tote"]
+    dynamic = [2, 3]
+    base = scene_id_from_bodies(names, dynamic)
+
+    check("id nao e trivial", base != 0, f"0x{base:08x}")
+    check(
+        "mesma cena, mesmo id",
+        scene_id_from_bodies(list(names), list(dynamic)) == base,
+    )
+
+    # The case that failed on the real model: an episode prop with no joint.
+    with_prop = scene_id_from_bodies(names + ["episode_prop"], dynamic)
+    check(
+        "corpo estatico novo muda o id",
+        with_prop != base,
+        f"0x{base:08x} -> 0x{with_prop:08x}",
+    )
+
+    renamed = scene_id_from_bodies(["world", "shelf", "pelvis", "tote"], dynamic)
+    check("renomear mobilia muda o id", renamed != base)
+
+    # Same bodies, different split: every slot shifts without a name changing.
+    resplit = scene_id_from_bodies(names, [1, 2, 3])
+    check(
+        "mudar o split muda o id",
+        resplit != base,
+        f"0x{base:08x} -> 0x{resplit:08x}",
+    )
+
+    reordered = scene_id_from_bodies(names, [3, 2])
+    check("trocar a ordem dos slots muda o id", reordered != base)
+
+
 def test_packet_fits_the_mtu() -> None:
     """The point of the exercise, stated as a budget."""
-    print("\n[4] O pacote cabe na MTU")
+    print("\n[5] O pacote cabe na MTU")
 
     model, _ = tabletop_scene()
     dynamic = dynamic_body_indices(model)
@@ -232,6 +278,7 @@ def main() -> int:
     test_chain_walk()
     test_mocap_bodies_are_streamed()
     test_selection_is_ordered_and_complete()
+    test_scene_id_moves_with_the_scene()
     test_packet_fits_the_mtu()
 
     print("\nTodos os testes passaram." if not failures else f"\n{failures} FALHA(S).")

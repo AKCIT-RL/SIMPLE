@@ -76,6 +76,29 @@ def scene_id_from_names(body_names) -> int:
     return h
 
 
+def scene_id_from_bodies(body_names, dynamic_indices) -> int:
+    """Identity of a scene: every body, and which packet slot each one uses.
+
+    Both halves are needed, and each was tried alone first.
+
+    Hashing only the streamed names misses a new episode that adds a static
+    prop: the dynamic list is untouched, so the id holds while the geometry the
+    client loaded no longer matches -- and because the poses it does receive
+    stay valid, nothing else notices. That is the failure this id exists to
+    catch.
+
+    Hashing only the names misses the reverse: the same bodies can be split
+    into streamed and placed differently, which moves every slot without
+    touching a name, and slot k would then mean two different bodies on the two
+    sides.
+    """
+    slots = {body: slot for slot, body in enumerate(dynamic_indices)}
+    return scene_id_from_names(
+        f"{index}:{slots.get(index, -1)}:{name}"
+        for index, name in enumerate(body_names)
+    )
+
+
 def encode_state(frame: int, scene_id: int, positions, quaternions) -> bytes:
     """Serialise one frame of body poses.
 

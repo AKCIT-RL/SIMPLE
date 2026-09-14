@@ -54,7 +54,7 @@ from .coordinates import (
     positions_to_unity,
     quaternions_to_unity,
 )
-from .protocol import scene_id_from_names
+from .protocol import scene_id_from_bodies
 
 SCENE_FORMAT = "simple-unity-scene"
 SCENE_FORMAT_VERSION = 1
@@ -351,7 +351,7 @@ def export_scene(model, out_dir: str, include_collision: bool = False) -> dict:
         "format": SCENE_FORMAT,
         "version": SCENE_FORMAT_VERSION,
         "coordinate_space": "unity",
-        "scene_id": scene_id_from_names([names[i] for i in dynamic]),
+        "scene_id": scene_id_from_bodies(names, dynamic),
         # Body poses arrive in world space, so the recommended Unity layout is a
         # flat set of GameObjects under one scene root. Nesting them by `parent`
         # and then assigning world poses per frame would work but does the

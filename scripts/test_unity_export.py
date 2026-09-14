@@ -277,7 +277,7 @@ def test_protocol(model, data, manifest) -> None:
     dynamic = dynamic_body_indices(model)
     names = body_names(model)
     pos, quat = world_poses(model, data, dynamic)
-    scene_id = protocol.scene_id_from_names([names[i] for i in dynamic])
+    scene_id = protocol.scene_id_from_bodies(names, dynamic)
     check(
         "scene_id do manifesto bate",
         manifest["scene_id"] == scene_id,

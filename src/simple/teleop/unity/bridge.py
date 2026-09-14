@@ -35,7 +35,7 @@ happens on the reset boundary rather than mid-episode.
 import logging
 import time
 
-from .protocol import packet_size, scene_id_from_names
+from .protocol import packet_size, scene_id_from_bodies
 from .scene_export import (
     body_names,
     dynamic_body_indices,
@@ -246,11 +246,8 @@ class UnityRenderBridge:
 def scene_id_for(simulator) -> int:
     """Scene id a simulator's current model would export as, without exporting.
 
-    Hashes the streamed bodies only, matching what ``export_scene`` writes. A
-    hash over every body would be stable across a change to the static/dynamic
-    split while the packet layout underneath it moved -- the one case the id
-    exists to catch.
+    Matches what ``export_scene`` writes: every body name and its packet slot,
+    so the id moves both when the geometry changes and when the split does.
     """
     model = simulator.mjModel
-    names = body_names(model)
-    return scene_id_from_names([names[i] for i in dynamic_body_indices(model)])
+    return scene_id_from_bodies(body_names(model), dynamic_body_indices(model))

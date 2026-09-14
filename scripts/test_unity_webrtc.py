@@ -230,17 +230,23 @@ def test_ice_helpers() -> None:
     check("IP do Tailscale aceito", is_routable_candidate("100.118.137.125"))
     check("IP de LAN aceito", is_routable_candidate("192.168.1.10"))
 
-    # 31 bodies fit one 1280-byte MTU; a scene with objects may not.
-    fits = protocol.packet_size(31)
-    check(
-        "pacote do G1 cabe em uma MTU de VPN",
-        fits <= SAFE_PAYLOAD_BYTES,
-        f"{fits} <= {SAFE_PAYLOAD_BYTES} bytes",
-    )
+    # This asserted that a 31-body G1 fits one MTU. 31 was a guess made before a
+    # model was ever compiled: the G1 this suite loads has 44 bodies, because the
+    # dexterous hands carry one per finger link, and its packet is 1252 bytes --
+    # over the limit. The assertion was comfortable rather than true.
+    #
+    # What is worth pinning is the threshold itself, which is arithmetic. The
+    # live model is measured against it below, where being over says so out loud.
     limit = next(
         n for n in range(1, 500) if protocol.packet_size(n) > SAFE_PAYLOAD_BYTES
     )
-    print(f"         fragmenta a partir de {limit} bodies")
+    check(
+        "limite de fragmentacao conhecido",
+        protocol.packet_size(limit - 1) <= SAFE_PAYLOAD_BYTES
+        < protocol.packet_size(limit),
+        f"cabem {limit - 1} bodies ({protocol.packet_size(limit - 1)} B), "
+        f"{limit} fragmenta",
+    )
 
     test_sdp_survives_unity_round_trip()
 
