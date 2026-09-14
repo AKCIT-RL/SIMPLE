@@ -175,7 +175,7 @@ def test_mocap_bodies_are_streamed() -> None:
 
 
 def test_selection_is_ordered_and_complete() -> None:
-    print("\n[2] Selecao preserva a ordem do modelo")
+    print("\n[3] Selecao preserva a ordem do modelo")
 
     model, names = tabletop_scene()
     dynamic = dynamic_body_indices(model)
@@ -207,7 +207,7 @@ def test_selection_is_ordered_and_complete() -> None:
 
 def test_packet_fits_the_mtu() -> None:
     """The point of the exercise, stated as a budget."""
-    print("\n[3] O pacote cabe na MTU")
+    print("\n[4] O pacote cabe na MTU")
 
     model, _ = tabletop_scene()
     dynamic = dynamic_body_indices(model)
