@@ -53,6 +53,21 @@ data/*
 !data/_download.py
 !.env.sample
 
+# -----------------------
+# Recorded episodes & datasets
+# -----------------------
+# Teleop and render runs write LeRobot-format episodes here -- parquet shards
+# plus meta/. They are outputs: large, binary, and reproduced by re-running the
+# task. The exporter also leaves a .git inside the run directory, so committing
+# one records a gitlink to a repository nobody else can fetch.
+data_test/
+datasets/
+
+# Cloned next to the other third_party checkouts but absent from .gitmodules, so
+# `git add .` records it as a bare gitlink rather than as a submodule. Ignore it
+# until someone decides it belongs in .gitmodules.
+third_party/usd2mjcf/
+
 # Sphinx build artifacts
 docs/build/
 docs/source/api/
