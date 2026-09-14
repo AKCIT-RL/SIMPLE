@@ -32,6 +32,8 @@ Button mapping (Meta Quest 3 controllers → PICO equivalents)
   [Drop robot / Reset env handled at agent level, not here]
 """
 
+import time
+
 import numpy as np
 
 from decoupled_wbc.control.teleop.streamers.base_streamer import BaseStreamer, StreamerOutput
@@ -47,7 +49,7 @@ class VuerStreamer(BaseStreamer):
 
     # Navigation constants (match PicoStreamer)
     _DEAD_ZONE        = 0.1
-    _MAX_LINEAR_VEL   = 0.5   # m/s
+    _MAX_LINEAR_VEL   = 0.8   # m/s
     _MAX_ANGULAR_VEL  = 1.0   # rad/s
     _CONTROL_DT       = 1.0 / 50.0  # fixed 50 Hz call-rate assumption
 
@@ -74,10 +76,21 @@ class VuerStreamer(BaseStreamer):
         # Lifecycle managed by VuerDecoupledAgent (calls tv_wrapper.close()).
         pass
 
-    def reset_status(self) -> None:
-        """Reset internal state — called on episode reset."""
+    def reset_status(self, initial_yaw: float = 0.0) -> None:
+        """Reset internal state — called on episode reset.
+
+        `target_yaw` is a world-frame heading the yaw PD controller in
+        `G1GearWbcPolicy` tracks (see `g1_gear_wbc_policy.py`); it must start
+        at the robot's actual spawn yaw, not always 0.0 -- otherwise, on any
+        task whose robot spawn orientation isn't identity, the controller
+        reads a spurious yaw error at episode start and spins the robot back
+        toward world yaw 0 ("the old orientation").
+        """
         self.current_base_height = self._HEIGHT_DEFAULT
-        self.target_yaw = 0.0
+        self.target_yaw = initial_yaw
+        self._last_valid_left_wrist = np.eye(4, dtype=np.float64)
+        self._last_valid_right_wrist = np.eye(4, dtype=np.float64)
+        self._last_pose_warning_time = 0.0
 
         # Edge-detection state for all toggle buttons
         self._toggle_activation_last        = False
@@ -90,7 +103,7 @@ class VuerStreamer(BaseStreamer):
         # ------------------------------------------------------------------
         # 1. Wrist poses — headset-relative z-up (for WristsPreProcessor)
         # ------------------------------------------------------------------
-        left_wrist, right_wrist = self._tv.get_headset_relative_wrist_poses()
+        left_wrist, right_wrist = self._safe_get_wrist_poses()
 
         # ------------------------------------------------------------------
         # 2. Controller state — read once via get_tele_data() for buttons
@@ -218,3 +231,36 @@ class VuerStreamer(BaseStreamer):
             return 0.0
         sign = 1.0 if value > 0 else -1.0
         return sign * (abs(value) - dead_zone) / (1.0 - dead_zone)
+
+    def _safe_get_wrist_poses(self) -> tuple[np.ndarray, np.ndarray]:
+        """Return valid SE3 wrist poses or fall back to last valid values."""
+        try:
+            left_wrist, right_wrist = self._tv.get_headset_relative_wrist_poses()
+        except Exception as exc:
+            self._maybe_warn_invalid_pose(f"exception reading wrist poses: {exc}")
+            return self._last_valid_left_wrist, self._last_valid_right_wrist
+
+        if not self._is_valid_se3(left_wrist) or not self._is_valid_se3(right_wrist):
+            self._maybe_warn_invalid_pose("received invalid wrist pose matrix, using fallback")
+            return self._last_valid_left_wrist, self._last_valid_right_wrist
+
+        self._last_valid_left_wrist = left_wrist
+        self._last_valid_right_wrist = right_wrist
+        return left_wrist, right_wrist
+
+    @staticmethod
+    def _is_valid_se3(mat: np.ndarray) -> bool:
+        if not isinstance(mat, np.ndarray) or mat.shape != (4, 4):
+            return False
+        if not np.all(np.isfinite(mat)):
+            return False
+        if not np.allclose(mat[3], [0.0, 0.0, 0.0, 1.0], atol=1e-4):
+            return False
+        det = float(np.linalg.det(mat[:3, :3]))
+        return np.isfinite(det) and det > 0.0 and np.isclose(det, 1.0, atol=1e-2)
+
+    def _maybe_warn_invalid_pose(self, reason: str) -> None:
+        now = time.monotonic()
+        if now - self._last_pose_warning_time > 2.0:
+            print(f"[VuerStreamer] Warning: {reason}")
+            self._last_pose_warning_time = now

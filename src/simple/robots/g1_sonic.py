@@ -40,7 +40,19 @@ LEFT_HAND_JOINTS = ["left_hand_thumb_0_joint", "left_hand_thumb_1_joint", "left_
 RIGHT_HAND_JOINTS = ["right_hand_thumb_0_joint", "right_hand_thumb_1_joint", "right_hand_thumb_2_joint", "right_hand_index_0_joint", "right_hand_index_1_joint", "right_hand_middle_0_joint", "right_hand_middle_1_joint"]
 
 WHOLE_BODY_JOINTS = LEFT_LEG_JOINTS + RIGHT_LEFT_JOINTS + WAIST_JOINTS + LEFT_ARM_JOINTS + RIGHT_ARM_JOINTS + LEFT_HAND_JOINTS + RIGHT_HAND_JOINTS
-STABILIZE_VEL_THRESHOLD: float = 1e-4 # max |qvel[0:6]| to consider robot stable
+STABILIZE_VEL_THRESHOLD: float = 0.05 # max |qvel[0:6]| to consider robot stable
+# Was 1e-4: unrealistically tight given contact-solver/floating-point noise on
+# the floating base -- in practice the post-landing idle crouch (get_stabilize_action
+# in VuerDecoupledAgent) rarely converges below ~0.02-0.03 before postural drift
+# accumulates into a fall, so `stabilized` would frequently never latch and the
+# robot would collapse waiting for WBC control to take over. Reproduced on both
+# this task and the previously-validated g1_wholebody_locomotion_pick_between_tables_teleop
+# (~50% of resets failed to stabilize within 250 steps before this fix) -- a
+# pre-existing shared-code issue, not specific to either task. 0.05 verified
+# (4/4 resets, extended 500-step runs) to reliably latch and rise to a stable
+# ~0.96m standing height without any other regression observed. See
+# docs/teleop_simple_study/toteweg_factory_scene_migration_plan.md, "Real-stack
+# validation" for the investigation.
 MIN_STABILIZE_STEPS: int = 100 # min steps before velocity check is valid (1s at 200Hz)
 
 @RobotRegistry.register("g1_sonic")
@@ -362,11 +374,62 @@ class G1Sonic(CuRoboMixin,Humanoid,Robot,HeadCamMountable,HasDexterousHand):
     def get_robot_pose(self):
         return np.round(self.mjData.qpos[:7],3)
     
+    def _apply_pd_joint_control(self, target_q, left_hand_q=None, right_hand_q=None) -> None:
+        """Shared PD position control used by both "decoupled_wbc" and
+        "elastic_band" action types. Extracted so the elastic band's
+        suspending force (xfrc_applied) is never the *only* thing acting on
+        the robot -- previously "elastic_band" left self.mjData.ctrl entirely
+        untouched, freezing the joint torques at whatever the last
+        "decoupled_wbc" step happened to compute right before the handoff.
+        That frozen torque then fought the band's strong external force
+        (kp_pos=10000) with nothing updating the leg targets to follow,
+        producing violent self-colliding contortions -- see the migration
+        plan doc, "Real-stack validation", for how this was diagnosed."""
+        kp = np.array(self.sonic_config.get("MOTOR_KP", [100.0] * self.num_body_dof))
+        kd = np.array(self.sonic_config.get("MOTOR_KD", [5.0] * self.num_body_dof))
+
+        q_cur = self.mjData.qpos[self.body_joint_index + self.qpos_offset - 1]
+        dq_cur = self.mjData.qvel[self.body_joint_index + self.qvel_offset - 1]
+
+        body_torques = kp * (target_q - q_cur) + kd * (0 - dq_cur)
+        self.torques[self.body_joint_index - 1] = body_torques
+
+        if self.num_hand_dof > 0:
+            hand_kp = np.array([5.0, 5.0, 5.0, 2.5, 2.5, 2.5, 2.5])
+            hand_kd = 1.0
+            if left_hand_q is not None:
+                lh_q_cur = self.mjData.qpos[self.left_hand_index + self.qpos_offset - 1]
+                lh_dq_cur = self.mjData.qvel[self.left_hand_index + self.qvel_offset - 1]
+                self.torques[self.left_hand_index - 1] = hand_kp * (left_hand_q - lh_q_cur) + hand_kd * (0 - lh_dq_cur)
+            if right_hand_q is not None:
+                rh_q_cur = self.mjData.qpos[self.right_hand_index + self.qpos_offset - 1]
+                rh_dq_cur = self.mjData.qvel[self.right_hand_index + self.qvel_offset - 1]
+                self.torques[self.right_hand_index - 1] = hand_kp * (right_hand_q - rh_q_cur) + hand_kd * (0 - rh_dq_cur)
+
+        self.torques = np.clip(self.torques, -self.torque_limit, self.torque_limit)
+
+        if self.sonic_config["FREE_BASE"]:
+            self.mjData.ctrl = np.concatenate((np.zeros(6), self.torques))
+        else:
+            self.mjData.ctrl = self.torques
+
     def apply_action(self, action_cmd: ActionCmd) -> None:
         assert isinstance(self.controller, WholeBodyEEFController)
 
         match action_cmd.type:
             case "elastic_band":
+                # Keep the legs/arms actively PD-tracking their last-known
+                # target (if any) *in addition to* the band's suspending
+                # force, instead of leaving joint control frozen -- see
+                # _apply_pd_joint_control's docstring.
+                target_q = action_cmd["target_q"]
+                if target_q is not None:
+                    self._apply_pd_joint_control(
+                        target_q,
+                        action_cmd["left_hand_q"],
+                        action_cmd["right_hand_q"],
+                    )
+
                 pose = np.concatenate(
                     [
                         self.mjData.xpos[self.band_attached_link],
@@ -409,43 +472,14 @@ class G1Sonic(CuRoboMixin,Humanoid,Robot,HeadCamMountable,HasDexterousHand):
                     self.mjData.ctrl = self.torques
 
             case "decoupled_wbc":
-                target_q = action_cmd["target_q"]  # 29 body joints in actuator order
-                # PD position control using per-joint gains from decoupled_wbc config
-                kp = np.array(self.sonic_config.get("MOTOR_KP", [100.0] * self.num_body_dof))
-                kd = np.array(self.sonic_config.get("MOTOR_KD", [5.0] * self.num_body_dof))
+                # 29 body joints in actuator order; per-joint gains from decoupled_wbc config
+                self._apply_pd_joint_control(
+                    action_cmd["target_q"],
+                    action_cmd["left_hand_q"],
+                    action_cmd["right_hand_q"],
+                )
 
-                q_cur = self.mjData.qpos[self.body_joint_index + self.qpos_offset - 1]
-                dq_cur = self.mjData.qvel[self.body_joint_index + self.qvel_offset - 1]
 
-                body_torques = kp * (target_q - q_cur) + kd * (0 - dq_cur)
-                self.torques[self.body_joint_index - 1] = body_torques
-
-                # Hand PD control (driven by trigger/grip via decoupled WBC teleop IK)
-                # Joint order: thumb_0, thumb_1, thumb_2, index_0, index_1, middle_0, middle_1
-                # Index + middle work together against thumb in a power grip,
-                # so their kp is halved to balance grip forces.
-                if self.num_hand_dof > 0:
-                    left_hand_q = action_cmd["left_hand_q"]
-                    right_hand_q = action_cmd["right_hand_q"]
-                    hand_kp = np.array([5.0, 5.0, 5.0, 2.5, 2.5, 2.5, 2.5])
-                    hand_kd = 1.0
-                    if left_hand_q is not None:
-                        lh_q_cur = self.mjData.qpos[self.left_hand_index + self.qpos_offset - 1]
-                        lh_dq_cur = self.mjData.qvel[self.left_hand_index + self.qvel_offset - 1]
-                        self.torques[self.left_hand_index - 1] = hand_kp * (left_hand_q - lh_q_cur) + hand_kd * (0 - lh_dq_cur)
-                    if right_hand_q is not None:
-                        rh_q_cur = self.mjData.qpos[self.right_hand_index + self.qpos_offset - 1]
-                        rh_dq_cur = self.mjData.qvel[self.right_hand_index + self.qvel_offset - 1]
-                        self.torques[self.right_hand_index - 1] = hand_kp * (right_hand_q - rh_q_cur) + hand_kd * (0 - rh_dq_cur)
-
-                self.torques = np.clip(self.torques, -self.torque_limit, self.torque_limit)
-
-                if self.sonic_config["FREE_BASE"]:
-                    self.mjData.ctrl = np.concatenate((np.zeros(6), self.torques))
-                else:
-                    self.mjData.ctrl = self.torques
-
-    
     def compute_body_torques(self, low_cmd, use_sensor) -> np.ndarray:
         # PD control: tau = tau_ff + kp * (q_des - q) + kd * (dq_des - dq)
         body_torques = np.zeros(self.num_body_dof) # (29,)

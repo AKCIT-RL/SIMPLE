@@ -34,6 +34,7 @@ from typing_extensions import Annotated, TYPE_CHECKING
 from tqdm import tqdm
 import tyro
 import simple.envs as _  # import all envs
+from simple.datasets.lerobot import _load_episode_prompts, _load_episode_tasks
 
 if TYPE_CHECKING:
     from simple.envs.sonic_loco_manip import SonicLocoManipEnv
@@ -117,7 +118,7 @@ def _init_replay_exporter(save_dir: str, fps: int, task_prompt: str, obj_names: 
     return exporter
 
 
-def _build_replay_frame(row, isaac_image, source_features: dict):
+def _build_replay_frame(row, isaac_image, source_features: dict, num_objects: int = 0):
     """Build a recording frame from a source parquet row and an Isaac-rendered image."""
     frame = {
         "observation.images.ego_view": isaac_image,
@@ -150,9 +151,12 @@ def _build_replay_frame(row, isaac_image, source_features: dict):
     #         row["observation.torso_rpy_command"], dtype=np.float64
     #     )
     if "observation.object_poses" in source_features:
-        frame["observation.object_poses"] = np.asarray(
-            row["observation.object_poses"], dtype=np.float64
-        )
+        # Both source and output schemas are padded to the same fixed
+        # max-slot count (num_objects here is that fixed count, not the
+        # live per-episode sim object count -- see fixed_num_objects in
+        # main()), so this is a passthrough/no-op slice in practice.
+        source_poses = np.asarray(row["observation.object_poses"], dtype=np.float64)
+        frame["observation.object_poses"] = source_poses[: num_objects * 7]
 
     return frame
 
@@ -170,14 +174,25 @@ def _save_replay_episode_env_config(exporter, env_conf: dict, episode_index: int
         for entry in lines:
             f.write(json.dumps(entry) + "\n")
 
-def _load_episode_tasks(data_dir: str):
-    """Load task name per episode from meta/tasks.jsonl."""                                                                                                                        
-    tasks = {}                                                                                                 
-    with open(Path(data_dir) / "meta" / "tasks.jsonl", "r") as f:
-        for line in f:             
-            entry = json.loads(line)                                                                                                                                      
-            tasks[int(entry["task_index"])] = entry["task"]
-    return tasks
+def _parse_episode_indices(spec: str) -> set[int]:
+    """Parse a comma-separated list of episode indices and/or ranges (e.g.
+    "15" or "15,20-22") into a set of ints. Empty string -> empty set."""
+    indices: set[int] = set()
+    spec = spec.strip()
+    if not spec:
+        return indices
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            start_s, end_s = part.split("-", 1)
+            start, end = int(start_s), int(end_s)
+            indices.update(range(start, end + 1))
+        else:
+            indices.add(int(part))
+    return indices
+
 
 def main(
     env_id: Annotated[str, typer.Argument()] = "simple/G1WholebodyBendPick-v1",
@@ -190,8 +205,28 @@ def main(
     record: Annotated[bool, typer.Option()] = False,
     save_dir: Annotated[str, typer.Option()] = "data/render_decoupled_wbc",
     dr_level: Annotated[int, typer.Option()] = 0,
+    skip_episodes: Annotated[str, typer.Option(
+        help="Comma-separated source episode indices (and/or ranges, e.g. "
+             "'15' or '15,20-22') to exclude from the replay -- for episodes "
+             "that crash the sim (e.g. MuJoCo arena-memory segfaults) and "
+             "need to be dropped to render the rest of the session. Output "
+             "episodes are renumbered contiguously regardless of which "
+             "source indices were skipped."
+    )] = "",
+    isaac_background_usd: Annotated[
+        str | None, typer.Option(help=(
+            "USD path/URL referenced as a purely visual Isaac Sim backdrop "
+            "(e.g. the SimReady Warehouse environment), for tasks that build "
+            "their own scenario geometry instead of layout.scene. Accepts a "
+            "local absolute path or an omniverse:// Nucleus URL. No effect "
+            "in mujoco-only sim modes."
+        ))
+    ] = None,
 ):
     """Replay recorded teleop dataset with Isaac Sim rendering."""
+    if isaac_background_usd:
+        os.environ["SIMPLE_ISAAC_BACKGROUND_USD"] = isaac_background_usd
+
     from gear_sonic.utils.mujoco_sim.configs import SimLoopConfig
 
     # Default save_dir: append _isaac to data_dir
@@ -211,7 +246,10 @@ def main(
     if num_episodes < 0:
         num_episodes = total_episodes
     num_episodes = min(num_episodes, total_episodes)
-    print(f"Loaded {total_episodes} episodes, will replay {num_episodes}")
+    skip_episode_indices = _parse_episode_indices(skip_episodes)
+    episode_indices = [i for i in range(num_episodes) if i not in skip_episode_indices]
+    print(f"Loaded {total_episodes} episodes, will replay {len(episode_indices)} "
+          f"(of {num_episodes} considered, skipping {sorted(skip_episode_indices & set(range(num_episodes)))})")
 
     # Load per-episode environment configs (object identities, poses, scene, etc.)
     episode_configs = _load_episode_configs(data_dir)
@@ -221,12 +259,26 @@ def main(
         print("WARNING: No environment_config found in episodes.jsonl — "
               "scene will NOT match recorded episodes (objects may differ)")
 
+    episode_prompts = _load_episode_prompts(data_dir)
+    if len(set(episode_prompts.values())) > 1:
+        print(f"Loaded {len(set(episode_prompts.values()))} distinct per-episode prompts")
+
     # Determine features available
     features = dataset_info["features"]
     has_base_pose = "observation.base_pose" in features
     has_base_vel = "observation.base_vel" in features
     has_object_poses = "observation.object_poses" in features
     print(f"Features: base_pose={has_base_pose}, base_vel={has_base_vel}, object_poses={has_object_poses}")
+
+    # Fixed object-slot count for the *output* recording schema. The source
+    # dataset already pads observation.object_poses to a fixed max-slot size
+    # (e.g. stochastic shelf_group tote counts per episode), so read the slot
+    # count from its schema rather than the live per-episode sim object count
+    # -- the latter varies episode to episode and breaks the exporter's fixed
+    # LeRobot feature shape (e.g. 4 live totes vs 5 live totes).
+    obj_poses_feature = features.get("observation.object_poses")
+    fixed_num_objects = (obj_poses_feature["shape"][0] // 7) if obj_poses_feature else 0
+    fixed_obj_names = [f"target_{i}" for i in range(fixed_num_objects)]
 
     # Create environment with Isaac Sim rendering
     config = tyro.cli(SimLoopConfig, config=(tyro.conf.ConsolidateSubcommandArgs,), args=[])
@@ -266,7 +318,7 @@ def main(
     # print(f"Loaded replay results for {len(replay_results)} episodes")
 
     try:
-        for ep_idx in tqdm(range(num_episodes), desc="Episodes", unit="episode"):
+        for ep_idx in tqdm(episode_indices, desc="Episodes", unit="episode"):
             # if ep_idx not in episodes or not replay_results[ep_idx]:
             #     print(f"Episode {ep_idx} not found or failed, skipping")
             #     continue
@@ -282,19 +334,47 @@ def main(
                 obs, info = env.reset()
 
             obj_names_labels = list(sonic_env.mujoco.mj_objects.keys())
-            obj_names = list(sonic_env.task.layout.actors[i].asset.name.replace(" ","_") for i in obj_names_labels)
+            # MuJoCo body/joint name per object, not the raw asset name --
+            # with several same-asset instances (e.g. multiple "bin_b04" totes
+            # spawned by shelf_group, or the industrial sorting task's screw/
+            # screwdriver copies), the raw asset name collides and doesn't match
+            # any real joint. mj_body_name applies the same dup-label
+            # disambiguation as the engine (see MujocoSimulator.mj_body_name),
+            # so duplicates are impossible by construction.
+            obj_names = list(sonic_env.mujoco.mj_body_name(i) for i in obj_names_labels)
             num_objects = len(obj_names_labels)
+
+            # The prompt is per episode (sampled quantities), so it has to follow
+            # the episode being replayed instead of being frozen at exporter init.
+            task_prompt = episode_prompts.get(
+                ep_idx, _load_episode_tasks(data_dir).get(0, "")
+            )
 
             # Init exporter after first reset so obj_names are available
             if record and exporter is None:
-                task_prompt = _load_episode_tasks(data_dir)[0]
                 exporter = _init_replay_exporter(
-                    f"{os.path.abspath(save_dir)}/{sonic_env.spec.id}/level-{dr_level}", 
-                    dataset_fps, task_prompt, obj_names_labels,
+                    f"{os.path.abspath(save_dir)}/{sonic_env.spec.id}/level-{dr_level}",
+                    dataset_fps, task_prompt, fixed_obj_names,
                     robot.joint_names
                 )
+                # This process may be one chunk of a multi-subprocess chunked
+                # render (see sync_and_render.py's --episode-chunk-size),
+                # resuming into an out_dir that already has episodes from
+                # earlier chunks -- episodes_saved must start from that
+                # existing count, not 0, or _save_replay_episode_env_config
+                # below will overwrite the earlier chunk's episodes.jsonl
+                # rows instead of writing the newly appended ones.
+                existing_meta_file = exporter.root / "meta" / "episodes.jsonl"
+                if existing_meta_file.exists():
+                    with open(existing_meta_file, "r") as f:
+                        episodes_saved = sum(1 for _ in f)
                 print(f"[Record] Exporter initialized, saving to {save_dir}")
-                print(f"[Record] Recording {len(obj_names_labels)} objects: {obj_names_labels}")
+                print(f"[Record] Recording {fixed_num_objects} object slots (fixed schema): {fixed_obj_names}")
+
+            if exporter is not None:
+                # LeRobot rejects a per-frame "task" key; the exporter attribute is
+                # what ends up in tasks.jsonl for the episode being written.
+                exporter.task = task_prompt
 
             # Dataset joint names for mapping observation.state → MuJoCo joints
             # dataset_joint_names = features["observation.state"]["names"]
@@ -345,7 +425,7 @@ def main(
                 if exporter is not None and isaac_sim is not None:
                     rendered = isaac_sim.render()
                     isaac_image = rendered["head_stereo_left"]
-                    frame = _build_replay_frame(row, isaac_image, features)
+                    frame = _build_replay_frame(row, isaac_image, features, num_objects=fixed_num_objects)
                     exporter.add_frame(frame)
 
                 # Pace to dataset fps (skip when recording for speed)
@@ -365,7 +445,7 @@ def main(
 
             print(f"[Replay] Episode {ep_idx} done")
 
-        print(f"\n[Replay] All {num_episodes} episodes replayed")
+        print(f"\n[Replay] All {len(episode_indices)} episodes replayed")
     except Exception as e:
         print(f"[Replay] Error: {e}")
         raise

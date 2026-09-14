@@ -26,6 +26,7 @@ Button mapping (Meta Quest 3 — see VuerStreamer for full table)
 """
 
 import time
+import socket
 import cv2
 import numpy as np
 
@@ -56,12 +57,22 @@ class VuerDecoupledAgent(SonicWbcAgent):
 
         self.episodes_saved   = 0
         self.num_episodes     = 100
+        # Extra HUD lines drawn on the VR stream, refreshed every step by the
+        # teleop CLI (e.g. live tote counts) -- empty for tasks that don't set it.
+        self.hud_lines: list[str] = []
         self.sim_dt           = self.robot.sonic_config["SIMULATE_DT"]
 
         # Controlled-drop state
         self._dropping         = False
         self._drop_rate        = 0.15   # m/s
         self._reset_requested  = False
+        # Ticks spent under real WBC control (post idle-crouch) with the band
+        # still fully up -- used to auto-start the landing sequence only once
+        # velocity has genuinely settled here, not just on the first tick
+        # `stabilized` happens to latch (see _run_decoupled_policy).
+        self._wbc_settle_ticks = 0
+        self._auto_drop_settle_ticks = 50   # ~1s at 50Hz control rate
+        self._auto_drop_qvel_threshold = 0.1  # max |qvel[0:6]| to allow auto-drop to start
 
         # Edge-detection for agent-level buttons (drop / reset)
         self._drop_btn_last  = False
@@ -89,11 +100,26 @@ class VuerDecoupledAgent(SonicWbcAgent):
     # Initialisation helpers
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _assert_vuer_port_available(port: int = 8012) -> None:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                sock.bind(("0.0.0.0", port))
+            except OSError as exc:
+                raise RuntimeError(
+                    f"TeleVuer port {port} is already in use. "
+                    f"Stop the previous Vuer/TeleVuer process first "
+                    f"(e.g. `lsof -i :{port}` then kill the stale PID), then retry."
+                ) from exc
+
     def _init_vuer_streamer(self) -> None:
         """Start the TeleVuerWrapper (Vuer WebXR server process)."""
         from televuer import TeleVuerWrapper
 
         sonic_cfg = self.robot.sonic_config
+        vuer_port = int(sonic_cfg.get("vuer_port", 8012))
+        self._assert_vuer_port_available(vuer_port)
 
         # Image shape is needed even for pass-through mode (internal buffer).
         # Fallback to a safe stereo resolution if not configured.
@@ -114,7 +140,7 @@ class VuerDecoupledAgent(SonicWbcAgent):
         )
         print(
             f"[VuerDecoupled] TeleVuer started. "
-            f"Open https://<PC_IP>:8012 in the Meta Quest browser."
+            f"Open https://<PC_IP>:{vuer_port} in the Meta Quest browser."
         )
 
     def _init_decoupled_policy(self) -> None:
@@ -273,6 +299,13 @@ class VuerDecoupledAgent(SonicWbcAgent):
         cv2.putText(left_bgr, text, (x, y), font, scale, (0, 255, 0), thickness)
         cv2.putText(right_bgr, text, (x, y), font, scale, (0, 255, 0), thickness)
 
+        # Extra per-step HUD lines (e.g. live tote counts), top-left
+        hud_scale, hud_thickness = 0.7, 2
+        for i, line in enumerate(self.hud_lines):
+            y_pos = 30 + i * 28
+            cv2.putText(left_bgr, line, (20, y_pos), font, hud_scale, (0, 255, 255), hud_thickness)
+            cv2.putText(right_bgr, line, (20, y_pos), font, hud_scale, (0, 255, 255), hud_thickness)
+
         stereo_bgr = np.concatenate([left_bgr, right_bgr], axis=1)
         
         # Resize to match TeleVuer's internal shared memory buffer expected shape (H, W)
@@ -345,9 +378,20 @@ class VuerDecoupledAgent(SonicWbcAgent):
 
         is_first_step = self._cached_target_q is None
         default_upper = self._dwbc_robot_model.get_initial_upper_body_pose()
+        # DEFAULT_NAV_CMD's target_yaw (index 3) is hardcoded to 0.0 -- this
+        # goal is active for ~2s every episode (until robot.stabilized
+        # latches), which flips G1GearWbcPolicy.use_teleop_policy_cmd True
+        # and feeds its yaw PD controller a target_yaw=0 error against
+        # whatever yaw the task actually spawned the robot at, causing it
+        # to spin toward world yaw 0 before real teleop commands ever take
+        # over. Use the robot's live current yaw instead so the PD sees
+        # zero error and the robot holds its spawn orientation throughout
+        # the stabilize phase.
+        stabilize_nav_cmd = np.asarray(DEFAULT_NAV_CMD, dtype=np.float64).copy()
+        stabilize_nav_cmd[3] = self._current_base_yaw()
         goal = {
             "target_upper_body_pose":              default_upper,
-            "navigate_cmd":                        np.asarray(DEFAULT_NAV_CMD),
+            "navigate_cmd":                        stabilize_nav_cmd,
             "base_height_command":                 np.atleast_1d(np.asarray(DEFAULT_BASE_HEIGHT)),
             "target_time":                         t_now + (2.0 if is_first_step else 1 / self._control_frequency),
             "interpolation_garbage_collection_time": t_now - 2 / self._control_frequency,
@@ -379,11 +423,36 @@ class VuerDecoupledAgent(SonicWbcAgent):
         synced_eef = teleop_action["wrist_pose"]
 
         teleop_action["timestamp"] = t_now
-        if not self._teleop_initialized:
+        first_wbc_call = not self._teleop_initialized
+        if first_wbc_call:
             teleop_action["target_time"] = t_now + 2.0
             self._teleop_initialized = True
+            self._wbc_settle_ticks = 0
         else:
             teleop_action["target_time"] = t_now + 1 / self._control_frequency
+
+        # Auto-start the landing sequence once real WBC control has held a
+        # genuinely settled stance for a short buffer, instead of waiting for
+        # a manual drop-button press. Previously the robot would linger
+        # suspended near the band's anchor (z=1.0) indefinitely -- fighting
+        # the WBC policy's own attempt to plant its feet ("kicking, searching
+        # for the ground") -- until the operator pressed the right-thumbstick
+        # drop button. Triggering this on the very *first* WBC tick (tried
+        # first) was too eager: `robot.stabilized` only requires one momentary
+        # dip below threshold, so the drop could start while qvel was still
+        # settling, producing a fast/violent release. Requiring both a short
+        # settle window *and* a fresh low-velocity check right before
+        # triggering is much closer to what a human operator does by eye
+        # before pressing the button.
+        if not self._dropping and self.robot.elastic_band and self.robot.elastic_band.enable:
+            self._wbc_settle_ticks += 1
+            qvel_max = float(np.max(np.abs(self.robot.mjData.qvel[0:6])))
+            if self._wbc_settle_ticks >= self._auto_drop_settle_ticks and qvel_max < self._auto_drop_qvel_threshold:
+                self._dropping = True
+                print(
+                    f"[VuerDecoupled] Landing sequence started automatically "
+                    f"(settled {self._wbc_settle_ticks} ticks, qvel_max={qvel_max:.3f})."
+                )
 
         wbc_obs = self._build_wbc_observation(sim_obs)
         self._wbc_policy.set_observation(wbc_obs)
@@ -391,9 +460,22 @@ class VuerDecoupledAgent(SonicWbcAgent):
         teleop_just_activated = self._teleop_policy.is_active and not self._teleop_was_active
         self._teleop_was_active = self._teleop_policy.is_active
 
-        if teleop_just_activated:
+        # Treat the very first decoupled-WBC call the same as an engagement
+        # edge: get_stabilize_action() was driving a completely different
+        # default-pose goal up until now, so the teleop policy's own
+        # idle/home target can be far from the robot's actual current joint
+        # configuration. Without this, that first call seeds `q` straight
+        # from the teleop policy's idle target with no reference to where
+        # the robot physically is, producing a violent, self-colliding pose
+        # jump (knee-to-torso, shoulder-to-ankle contacts observed) before
+        # the sim can catch up -- see the migration plan doc, "Real-stack
+        # validation", for how this was diagnosed.
+        if first_wbc_call or teleop_just_activated:
             self._teleop_activate_time = t_now
-            print("[VuerDecoupled] Teleop activated — smoothing arm engagement.")
+            if teleop_just_activated:
+                print("[VuerDecoupled] Teleop activated — smoothing arm engagement.")
+            else:
+                print("[VuerDecoupled] First WBC control step — smoothing pose handoff from idle stance.")
 
         wbc_goal = {}
         if teleop_action:
@@ -406,7 +488,7 @@ class VuerDecoupledAgent(SonicWbcAgent):
                 remaining = max(0.0, self._arm_engage_smooth_secs - elapsed)
                 if remaining > 0.0:
                     wbc_goal["target_time"] = t_now + remaining
-            if teleop_just_activated and "q" in wbc_goal:
+            if (first_wbc_call or teleop_just_activated) and "q" in wbc_goal:
                 wbc_goal["q"] = wbc_obs["q"].copy()
 
         if wbc_goal:
@@ -450,6 +532,16 @@ class VuerDecoupledAgent(SonicWbcAgent):
                 "elastic_band",
                 dropping=self._dropping,
                 drop_rate=self._drop_rate,
+                # Keep the joints actively PD-tracking the current WBC target
+                # while the band holds the pelvis -- without this, g1_sonic's
+                # apply_action() previously left mjData.ctrl frozen at
+                # whatever it was the instant this action type took over from
+                # "decoupled_wbc", fighting the band's strong external force
+                # with stale torques (see the migration plan doc, "Real-stack
+                # validation", for how this was diagnosed).
+                target_q=self._cached_target_q,
+                left_hand_q=self._cached_left_hand_q,
+                right_hand_q=self._cached_right_hand_q,
             )
 
         return ActionCmd(
@@ -464,6 +556,15 @@ class VuerDecoupledAgent(SonicWbcAgent):
             obs_tensor=wbc_action["obs_tensor"],
         )
 
+    def _current_base_yaw(self) -> float:
+        """Robot's current world-frame base yaw, read live from `floating_base_pose`
+        (MuJoCo wxyz quaternion convention)."""
+        quat = self.robot.prepare_obs()["floating_base_pose"][3:7]  # (w, x, y, z)
+        return float(np.arctan2(
+            2.0 * (quat[0] * quat[3] + quat[1] * quat[2]),
+            1.0 - 2.0 * (quat[2] ** 2 + quat[3] ** 2),
+        ))
+
     def reset_policy(self) -> None:
         """Reset the WBC pipeline for a new episode."""
         t_now = time.monotonic()
@@ -477,9 +578,18 @@ class VuerDecoupledAgent(SonicWbcAgent):
         self._teleop_was_active    = False
         self._teleop_activate_time = None
         self._last_teleop_action   = {}
+        self._wbc_settle_ticks     = 0
+        self._dropping             = False
 
-        # Reset VuerStreamer internal state (height, yaw, edge detectors)
-        self._teleop_policy.teleop_streamer.body_streamer.reset_status()
+        # Reset VuerStreamer internal state (height, yaw, edge detectors).
+        # target_yaw must start at the robot's actual spawn yaw -- not a
+        # hardcoded 0.0 -- otherwise the lower-body policy's yaw PD
+        # controller (G1GearWbcPolicy) reads a spurious error against
+        # whatever yaw the task spawned the robot at and spins it back
+        # toward world yaw 0 right after reset.
+        self._teleop_policy.teleop_streamer.body_streamer.reset_status(
+            initial_yaw=self._current_base_yaw()
+        )
 
     def publish_low_state(self, proprio) -> None:
         # No Unitree bridge needed for simulation

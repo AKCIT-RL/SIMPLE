@@ -1,0 +1,282 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mujoco model="toteweg">
+  <compiler angle="radian" coordinate="local" inertiafromgeom="true" />
+  <option integrator="RK4" timestep="0.01" />
+  <custom />
+  <asset>
+    <mesh file="visuals/toteweg.obj" name="visual" scale="1 1 1" />
+    <mesh file="collision/visual115.obj" name="visual115_mesh" />
+    <mesh file="collision/visual092.obj" name="visual092_mesh" />
+    <mesh file="collision/visual030.obj" name="visual030_mesh" />
+    <mesh file="collision/visual032.obj" name="visual032_mesh" />
+    <mesh file="collision/visual040.obj" name="visual040_mesh" />
+    <mesh file="collision/visual050.obj" name="visual050_mesh" />
+    <mesh file="collision/visual128.obj" name="visual128_mesh" />
+    <mesh file="collision/visual010.obj" name="visual010_mesh" />
+    <mesh file="collision/visual069.obj" name="visual069_mesh" />
+    <mesh file="collision/visual070.obj" name="visual070_mesh" />
+    <mesh file="collision/visual084.obj" name="visual084_mesh" />
+    <mesh file="collision/visual021.obj" name="visual021_mesh" />
+    <mesh file="collision/visual024.obj" name="visual024_mesh" />
+    <mesh file="collision/visual088.obj" name="visual088_mesh" />
+    <mesh file="collision/visual095.obj" name="visual095_mesh" />
+    <mesh file="collision/visual104.obj" name="visual104_mesh" />
+    <mesh file="collision/visual126.obj" name="visual126_mesh" />
+    <mesh file="collision/visual042.obj" name="visual042_mesh" />
+    <mesh file="collision/visual004.obj" name="visual004_mesh" />
+    <mesh file="collision/visual102.obj" name="visual102_mesh" />
+    <mesh file="collision/visual019.obj" name="visual019_mesh" />
+    <mesh file="collision/visual001.obj" name="visual001_mesh" />
+    <mesh file="collision/visual109.obj" name="visual109_mesh" />
+    <mesh file="collision/visual107.obj" name="visual107_mesh" />
+    <mesh file="collision/visual100.obj" name="visual100_mesh" />
+    <mesh file="collision/visual028.obj" name="visual028_mesh" />
+    <mesh file="collision/visual075.obj" name="visual075_mesh" />
+    <mesh file="collision/visual094.obj" name="visual094_mesh" />
+    <mesh file="collision/visual017.obj" name="visual017_mesh" />
+    <mesh file="collision/visual029.obj" name="visual029_mesh" />
+    <mesh file="collision/visual074.obj" name="visual074_mesh" />
+    <mesh file="collision/visual080.obj" name="visual080_mesh" />
+    <mesh file="collision/visual058.obj" name="visual058_mesh" />
+    <mesh file="collision/visual111.obj" name="visual111_mesh" />
+    <mesh file="collision/visual047.obj" name="visual047_mesh" />
+    <mesh file="collision/visual049.obj" name="visual049_mesh" />
+    <mesh file="collision/visual087.obj" name="visual087_mesh" />
+    <mesh file="collision/visual116.obj" name="visual116_mesh" />
+    <mesh file="collision/visual026.obj" name="visual026_mesh" />
+    <mesh file="collision/visual038.obj" name="visual038_mesh" />
+    <mesh file="collision/visual064.obj" name="visual064_mesh" />
+    <mesh file="collision/visual043.obj" name="visual043_mesh" />
+    <mesh file="collision/visual035.obj" name="visual035_mesh" />
+    <mesh file="collision/visual119.obj" name="visual119_mesh" />
+    <mesh file="collision/visual056.obj" name="visual056_mesh" />
+    <mesh file="collision/visual076.obj" name="visual076_mesh" />
+    <mesh file="collision/visual112.obj" name="visual112_mesh" />
+    <mesh file="collision/visual013.obj" name="visual013_mesh" />
+    <mesh file="collision/visual067.obj" name="visual067_mesh" />
+    <mesh file="collision/visual006.obj" name="visual006_mesh" />
+    <mesh file="collision/visual011.obj" name="visual011_mesh" />
+    <mesh file="collision/visual122.obj" name="visual122_mesh" />
+    <mesh file="collision/visual055.obj" name="visual055_mesh" />
+    <mesh file="collision/visual036.obj" name="visual036_mesh" />
+    <mesh file="collision/visual060.obj" name="visual060_mesh" />
+    <mesh file="collision/visual099.obj" name="visual099_mesh" />
+    <mesh file="collision/visual022.obj" name="visual022_mesh" />
+    <mesh file="collision/visual068.obj" name="visual068_mesh" />
+    <mesh file="collision/visual041.obj" name="visual041_mesh" />
+    <mesh file="collision/visual073.obj" name="visual073_mesh" />
+    <mesh file="collision/visual065.obj" name="visual065_mesh" />
+    <mesh file="collision/visual031.obj" name="visual031_mesh" />
+    <mesh file="collision/visual014.obj" name="visual014_mesh" />
+    <mesh file="collision/visual052.obj" name="visual052_mesh" />
+    <mesh file="collision/visual118.obj" name="visual118_mesh" />
+    <mesh file="collision/visual003.obj" name="visual003_mesh" />
+    <mesh file="collision/visual123.obj" name="visual123_mesh" />
+    <mesh file="collision/visual082.obj" name="visual082_mesh" />
+    <mesh file="collision/visual113.obj" name="visual113_mesh" />
+    <mesh file="collision/visual054.obj" name="visual054_mesh" />
+    <mesh file="collision/visual086.obj" name="visual086_mesh" />
+    <mesh file="collision/visual085.obj" name="visual085_mesh" />
+    <mesh file="collision/visual039.obj" name="visual039_mesh" />
+    <mesh file="collision/visual097.obj" name="visual097_mesh" />
+    <mesh file="collision/visual007.obj" name="visual007_mesh" />
+    <mesh file="collision/visual027.obj" name="visual027_mesh" />
+    <mesh file="collision/visual020.obj" name="visual020_mesh" />
+    <mesh file="collision/visual090.obj" name="visual090_mesh" />
+    <mesh file="collision/visual108.obj" name="visual108_mesh" />
+    <mesh file="collision/visual008.obj" name="visual008_mesh" />
+    <mesh file="collision/visual023.obj" name="visual023_mesh" />
+    <mesh file="collision/visual121.obj" name="visual121_mesh" />
+    <mesh file="collision/visual046.obj" name="visual046_mesh" />
+    <mesh file="collision/visual009.obj" name="visual009_mesh" />
+    <mesh file="collision/visual077.obj" name="visual077_mesh" />
+    <mesh file="collision/visual103.obj" name="visual103_mesh" />
+    <mesh file="collision/visual034.obj" name="visual034_mesh" />
+    <mesh file="collision/visual037.obj" name="visual037_mesh" />
+    <mesh file="collision/visual051.obj" name="visual051_mesh" />
+    <mesh file="collision/visual098.obj" name="visual098_mesh" />
+    <mesh file="collision/visual059.obj" name="visual059_mesh" />
+    <mesh file="collision/visual129.obj" name="visual129_mesh" />
+    <mesh file="collision/visual101.obj" name="visual101_mesh" />
+    <mesh file="collision/visual105.obj" name="visual105_mesh" />
+    <mesh file="collision/visual125.obj" name="visual125_mesh" />
+    <mesh file="collision/visual083.obj" name="visual083_mesh" />
+    <mesh file="collision/visual071.obj" name="visual071_mesh" />
+    <mesh file="collision/visual079.obj" name="visual079_mesh" />
+    <mesh file="collision/visual093.obj" name="visual093_mesh" />
+    <mesh file="collision/visual033.obj" name="visual033_mesh" />
+    <mesh file="collision/visual078.obj" name="visual078_mesh" />
+    <mesh file="collision/visual044.obj" name="visual044_mesh" />
+    <mesh file="collision/visual072.obj" name="visual072_mesh" />
+    <mesh file="collision/visual106.obj" name="visual106_mesh" />
+    <mesh file="collision/visual045.obj" name="visual045_mesh" />
+    <mesh file="collision/visual016.obj" name="visual016_mesh" />
+    <mesh file="collision/visual117.obj" name="visual117_mesh" />
+    <mesh file="collision/visual015.obj" name="visual015_mesh" />
+    <mesh file="collision/visual018.obj" name="visual018_mesh" />
+    <mesh file="collision/visual012.obj" name="visual012_mesh" />
+    <mesh file="collision/visual061.obj" name="visual061_mesh" />
+    <mesh file="collision/visual127.obj" name="visual127_mesh" />
+    <mesh file="collision/visual053.obj" name="visual053_mesh" />
+    <mesh file="collision/visual081.obj" name="visual081_mesh" />
+    <mesh file="collision/visual025.obj" name="visual025_mesh" />
+    <mesh file="collision/visual062.obj" name="visual062_mesh" />
+    <mesh file="collision/visual089.obj" name="visual089_mesh" />
+    <mesh file="collision/visual002.obj" name="visual002_mesh" />
+    <mesh file="collision/visual091.obj" name="visual091_mesh" />
+    <mesh file="collision/visual063.obj" name="visual063_mesh" />
+    <mesh file="collision/visual124.obj" name="visual124_mesh" />
+    <mesh file="collision/visual114.obj" name="visual114_mesh" />
+    <mesh file="collision/visual120.obj" name="visual120_mesh" />
+    <mesh file="collision/visual110.obj" name="visual110_mesh" />
+    <mesh file="collision/visual096.obj" name="visual096_mesh" />
+    <mesh file="collision/visual066.obj" name="visual066_mesh" />
+    <mesh file="collision/visual005.obj" name="visual005_mesh" />
+    <mesh file="collision/visual048.obj" name="visual048_mesh" />
+    <mesh file="collision/visual057.obj" name="visual057_mesh" />
+  </asset>
+  <worldbody>
+    <light cutoff="100" diffuse="1 1 1" dir="0 0 -1.3" directional="true" exponent="1" pos="0 0 1.3" specular="0.1 0.1 0.1" />
+    <body name="Root" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0">
+      <geom class="visual" mesh="visual" name="visual" pos="0.0 0.0 0.0" type="mesh" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual115_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual092_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual030_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual032_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual040_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual050_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual128_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual010_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual069_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual070_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual084_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual021_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual024_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual088_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual095_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual104_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual126_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual042_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual004_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual102_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual019_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual001_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual109_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual107_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual100_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual028_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual075_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual094_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual017_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual029_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual074_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual080_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual058_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual111_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual047_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual049_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual087_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual116_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual026_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual038_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual064_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual043_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual035_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual119_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual056_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual076_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual112_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual013_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual067_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual006_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual011_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual122_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual055_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual036_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual060_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual099_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual022_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual068_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual041_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual073_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual065_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual031_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual014_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual052_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual118_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual003_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual123_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual082_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual113_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual054_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual086_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual085_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual039_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual097_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual007_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual027_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual020_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual090_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual108_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual008_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual023_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual121_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual046_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual009_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual077_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual103_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual034_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual037_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual051_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual098_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual059_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual129_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual101_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual105_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual125_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual083_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual071_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual079_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual093_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual033_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual078_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual044_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual072_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual106_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual045_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual016_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual117_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual015_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual018_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual012_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual061_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual127_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual053_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual081_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual025_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual062_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual089_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual002_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual091_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual063_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual124_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual114_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual120_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual110_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual096_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual066_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual005_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual048_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="visual057_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+    </body>
+  </worldbody>
+  <actuator />
+  <default>
+    <default class="visual">
+      <geom conaffinity="0" contype="0" group="1" type="mesh" />
+    </default>
+    <default class="collision">
+      <geom group="0" />
+    </default>
+  </default>
+</mujoco>

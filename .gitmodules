@@ -29,3 +29,6 @@
 	path = third_party/televuer
 	url = git@github.com:AKCIT-RL/televuer.git
 	branch = integration/simple
+[submodule "third_party/usd2mjcf"]
+	path = third_party/usd2mjcf
+	url = https://github.com/GabrielJJ/usd2mjcf

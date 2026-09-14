@@ -7,6 +7,8 @@ Licensed under the terms in LICENSE file.
 
 from .spatial import SpatialDR, SpatialDRCfg
 from .target import TargetDR, TargetDRCfg
+from .target_group import TargetGroupDR, TargetGroupDRCfg
+from .shelf_group import ShelfGroupDR, ShelfGroupDRCfg
 from .distractor import DistractorDR, DistractorDRCfg
 from .camera import CameraDR, CameraDRCfg
 from .scene import SceneDR, TabletopSceneDR, TabletopSceneDRCfg

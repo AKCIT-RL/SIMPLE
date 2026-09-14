@@ -1,0 +1,253 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mujoco model="bin_b04">
+  <compiler angle="radian" coordinate="local" inertiafromgeom="true" />
+  <option integrator="RK4" timestep="0.01" />
+  <custom />
+  <asset>
+    <mesh file="visuals/Bin_B04_01.obj" name="Bin_B04_01" scale="1.0 1.0 1.0" />
+    <material name="opaque__plastic__bin_b" />
+    <mesh file="collision/Bin_B04_01016.obj" name="Bin_B04_01016_mesh" />
+    <mesh file="collision/Bin_B04_01100.obj" name="Bin_B04_01100_mesh" />
+    <mesh file="collision/Bin_B04_01031.obj" name="Bin_B04_01031_mesh" />
+    <mesh file="collision/Bin_B04_01103.obj" name="Bin_B04_01103_mesh" />
+    <mesh file="collision/Bin_B04_01056.obj" name="Bin_B04_01056_mesh" />
+    <mesh file="collision/Bin_B04_01022.obj" name="Bin_B04_01022_mesh" />
+    <mesh file="collision/Bin_B04_01004.obj" name="Bin_B04_01004_mesh" />
+    <mesh file="collision/Bin_B04_01042.obj" name="Bin_B04_01042_mesh" />
+    <mesh file="collision/Bin_B04_01071.obj" name="Bin_B04_01071_mesh" />
+    <mesh file="collision/Bin_B04_01086.obj" name="Bin_B04_01086_mesh" />
+    <mesh file="collision/Bin_B04_01014.obj" name="Bin_B04_01014_mesh" />
+    <mesh file="collision/Bin_B04_01097.obj" name="Bin_B04_01097_mesh" />
+    <mesh file="collision/Bin_B04_01077.obj" name="Bin_B04_01077_mesh" />
+    <mesh file="collision/Bin_B04_01060.obj" name="Bin_B04_01060_mesh" />
+    <mesh file="collision/Bin_B04_01072.obj" name="Bin_B04_01072_mesh" />
+    <mesh file="collision/Bin_B04_01101.obj" name="Bin_B04_01101_mesh" />
+    <mesh file="collision/Bin_B04_01107.obj" name="Bin_B04_01107_mesh" />
+    <mesh file="collision/Bin_B04_01033.obj" name="Bin_B04_01033_mesh" />
+    <mesh file="collision/Bin_B04_01110.obj" name="Bin_B04_01110_mesh" />
+    <mesh file="collision/Bin_B04_01009.obj" name="Bin_B04_01009_mesh" />
+    <mesh file="collision/Bin_B04_01070.obj" name="Bin_B04_01070_mesh" />
+    <mesh file="collision/Bin_B04_01054.obj" name="Bin_B04_01054_mesh" />
+    <mesh file="collision/Bin_B04_01030.obj" name="Bin_B04_01030_mesh" />
+    <mesh file="collision/Bin_B04_01013.obj" name="Bin_B04_01013_mesh" />
+    <mesh file="collision/Bin_B04_01073.obj" name="Bin_B04_01073_mesh" />
+    <mesh file="collision/Bin_B04_01104.obj" name="Bin_B04_01104_mesh" />
+    <mesh file="collision/Bin_B04_01093.obj" name="Bin_B04_01093_mesh" />
+    <mesh file="collision/Bin_B04_01055.obj" name="Bin_B04_01055_mesh" />
+    <mesh file="collision/Bin_B04_01039.obj" name="Bin_B04_01039_mesh" />
+    <mesh file="collision/Bin_B04_01012.obj" name="Bin_B04_01012_mesh" />
+    <mesh file="collision/Bin_B04_01010.obj" name="Bin_B04_01010_mesh" />
+    <mesh file="collision/Bin_B04_01052.obj" name="Bin_B04_01052_mesh" />
+    <mesh file="collision/Bin_B04_01018.obj" name="Bin_B04_01018_mesh" />
+    <mesh file="collision/Bin_B04_01034.obj" name="Bin_B04_01034_mesh" />
+    <mesh file="collision/Bin_B04_01068.obj" name="Bin_B04_01068_mesh" />
+    <mesh file="collision/Bin_B04_01091.obj" name="Bin_B04_01091_mesh" />
+    <mesh file="collision/Bin_B04_01002.obj" name="Bin_B04_01002_mesh" />
+    <mesh file="collision/Bin_B04_01053.obj" name="Bin_B04_01053_mesh" />
+    <mesh file="collision/Bin_B04_01051.obj" name="Bin_B04_01051_mesh" />
+    <mesh file="collision/Bin_B04_01112.obj" name="Bin_B04_01112_mesh" />
+    <mesh file="collision/Bin_B04_01075.obj" name="Bin_B04_01075_mesh" />
+    <mesh file="collision/Bin_B04_01067.obj" name="Bin_B04_01067_mesh" />
+    <mesh file="collision/Bin_B04_01029.obj" name="Bin_B04_01029_mesh" />
+    <mesh file="collision/Bin_B04_01040.obj" name="Bin_B04_01040_mesh" />
+    <mesh file="collision/Bin_B04_01036.obj" name="Bin_B04_01036_mesh" />
+    <mesh file="collision/Bin_B04_01049.obj" name="Bin_B04_01049_mesh" />
+    <mesh file="collision/Bin_B04_01109.obj" name="Bin_B04_01109_mesh" />
+    <mesh file="collision/Bin_B04_01085.obj" name="Bin_B04_01085_mesh" />
+    <mesh file="collision/Bin_B04_01024.obj" name="Bin_B04_01024_mesh" />
+    <mesh file="collision/Bin_B04_01106.obj" name="Bin_B04_01106_mesh" />
+    <mesh file="collision/Bin_B04_01087.obj" name="Bin_B04_01087_mesh" />
+    <mesh file="collision/Bin_B04_01001.obj" name="Bin_B04_01001_mesh" />
+    <mesh file="collision/Bin_B04_01026.obj" name="Bin_B04_01026_mesh" />
+    <mesh file="collision/Bin_B04_01028.obj" name="Bin_B04_01028_mesh" />
+    <mesh file="collision/Bin_B04_01105.obj" name="Bin_B04_01105_mesh" />
+    <mesh file="collision/Bin_B04_01082.obj" name="Bin_B04_01082_mesh" />
+    <mesh file="collision/Bin_B04_01017.obj" name="Bin_B04_01017_mesh" />
+    <mesh file="collision/Bin_B04_01099.obj" name="Bin_B04_01099_mesh" />
+    <mesh file="collision/Bin_B04_01080.obj" name="Bin_B04_01080_mesh" />
+    <mesh file="collision/Bin_B04_01083.obj" name="Bin_B04_01083_mesh" />
+    <mesh file="collision/Bin_B04_01027.obj" name="Bin_B04_01027_mesh" />
+    <mesh file="collision/Bin_B04_01035.obj" name="Bin_B04_01035_mesh" />
+    <mesh file="collision/Bin_B04_01038.obj" name="Bin_B04_01038_mesh" />
+    <mesh file="collision/Bin_B04_01020.obj" name="Bin_B04_01020_mesh" />
+    <mesh file="collision/Bin_B04_01081.obj" name="Bin_B04_01081_mesh" />
+    <mesh file="collision/Bin_B04_01005.obj" name="Bin_B04_01005_mesh" />
+    <mesh file="collision/Bin_B04_01090.obj" name="Bin_B04_01090_mesh" />
+    <mesh file="collision/Bin_B04_01102.obj" name="Bin_B04_01102_mesh" />
+    <mesh file="collision/Bin_B04_01062.obj" name="Bin_B04_01062_mesh" />
+    <mesh file="collision/Bin_B04_01037.obj" name="Bin_B04_01037_mesh" />
+    <mesh file="collision/Bin_B04_01019.obj" name="Bin_B04_01019_mesh" />
+    <mesh file="collision/Bin_B04_01061.obj" name="Bin_B04_01061_mesh" />
+    <mesh file="collision/Bin_B04_01008.obj" name="Bin_B04_01008_mesh" />
+    <mesh file="collision/Bin_B04_01007.obj" name="Bin_B04_01007_mesh" />
+    <mesh file="collision/Bin_B04_01095.obj" name="Bin_B04_01095_mesh" />
+    <mesh file="collision/Bin_B04_01084.obj" name="Bin_B04_01084_mesh" />
+    <mesh file="collision/Bin_B04_01108.obj" name="Bin_B04_01108_mesh" />
+    <mesh file="collision/Bin_B04_01092.obj" name="Bin_B04_01092_mesh" />
+    <mesh file="collision/Bin_B04_01044.obj" name="Bin_B04_01044_mesh" />
+    <mesh file="collision/Bin_B04_01096.obj" name="Bin_B04_01096_mesh" />
+    <mesh file="collision/Bin_B04_01045.obj" name="Bin_B04_01045_mesh" />
+    <mesh file="collision/Bin_B04_01015.obj" name="Bin_B04_01015_mesh" />
+    <mesh file="collision/Bin_B04_01048.obj" name="Bin_B04_01048_mesh" />
+    <mesh file="collision/Bin_B04_01011.obj" name="Bin_B04_01011_mesh" />
+    <mesh file="collision/Bin_B04_01050.obj" name="Bin_B04_01050_mesh" />
+    <mesh file="collision/Bin_B04_01023.obj" name="Bin_B04_01023_mesh" />
+    <mesh file="collision/Bin_B04_01074.obj" name="Bin_B04_01074_mesh" />
+    <mesh file="collision/Bin_B04_01046.obj" name="Bin_B04_01046_mesh" />
+    <mesh file="collision/Bin_B04_01003.obj" name="Bin_B04_01003_mesh" />
+    <mesh file="collision/Bin_B04_01114.obj" name="Bin_B04_01114_mesh" />
+    <mesh file="collision/Bin_B04_01043.obj" name="Bin_B04_01043_mesh" />
+    <mesh file="collision/Bin_B04_01064.obj" name="Bin_B04_01064_mesh" />
+    <mesh file="collision/Bin_B04_01057.obj" name="Bin_B04_01057_mesh" />
+    <mesh file="collision/Bin_B04_01094.obj" name="Bin_B04_01094_mesh" />
+    <mesh file="collision/Bin_B04_01063.obj" name="Bin_B04_01063_mesh" />
+    <mesh file="collision/Bin_B04_01113.obj" name="Bin_B04_01113_mesh" />
+    <mesh file="collision/Bin_B04_01078.obj" name="Bin_B04_01078_mesh" />
+    <mesh file="collision/Bin_B04_01098.obj" name="Bin_B04_01098_mesh" />
+    <mesh file="collision/Bin_B04_01058.obj" name="Bin_B04_01058_mesh" />
+    <mesh file="collision/Bin_B04_01032.obj" name="Bin_B04_01032_mesh" />
+    <mesh file="collision/Bin_B04_01088.obj" name="Bin_B04_01088_mesh" />
+    <mesh file="collision/Bin_B04_01006.obj" name="Bin_B04_01006_mesh" />
+    <mesh file="collision/Bin_B04_01089.obj" name="Bin_B04_01089_mesh" />
+    <mesh file="collision/Bin_B04_01047.obj" name="Bin_B04_01047_mesh" />
+    <mesh file="collision/Bin_B04_01059.obj" name="Bin_B04_01059_mesh" />
+    <mesh file="collision/Bin_B04_01066.obj" name="Bin_B04_01066_mesh" />
+    <mesh file="collision/Bin_B04_01021.obj" name="Bin_B04_01021_mesh" />
+    <mesh file="collision/Bin_B04_01065.obj" name="Bin_B04_01065_mesh" />
+    <mesh file="collision/Bin_B04_01111.obj" name="Bin_B04_01111_mesh" />
+    <mesh file="collision/Bin_B04_01025.obj" name="Bin_B04_01025_mesh" />
+    <mesh file="collision/Bin_B04_01079.obj" name="Bin_B04_01079_mesh" />
+    <mesh file="collision/Bin_B04_01041.obj" name="Bin_B04_01041_mesh" />
+    <mesh file="collision/Bin_B04_01076.obj" name="Bin_B04_01076_mesh" />
+    <mesh file="collision/Bin_B04_01069.obj" name="Bin_B04_01069_mesh" />
+  </asset>
+  <worldbody>
+    <light cutoff="100" diffuse="1 1 1" dir="0 0 -1.3" directional="true" exponent="1" pos="0 0 1.3" specular="0.1 0.1 0.1" />
+    <body name="RootNode" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0">
+      <geom class="visual" material="opaque__plastic__bin_b" mesh="Bin_B04_01" name="Bin_B04_01" pos="0.0 0.0 0.0" type="mesh" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01016_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01100_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01031_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01103_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01056_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01022_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01004_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01042_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01071_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01086_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01014_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01097_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01077_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01060_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01072_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01101_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01107_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01033_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01110_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01009_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01070_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01054_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01030_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01013_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01073_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01104_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01093_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01055_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01039_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01012_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01010_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01052_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01018_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01034_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01068_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01091_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01002_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01053_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01051_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01112_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01075_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01067_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01029_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01040_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01036_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01049_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01109_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01085_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01024_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01106_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01087_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01001_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01026_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01028_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01105_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01082_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01017_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01099_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01080_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01083_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01027_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01035_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01038_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01020_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01081_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01005_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01090_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01102_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01062_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01037_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01019_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01061_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01008_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01007_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01095_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01084_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01108_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01092_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01044_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01096_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01045_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01015_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01048_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01011_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01050_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01023_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01074_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01046_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01003_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01114_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01043_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01064_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01057_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01094_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01063_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01113_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01078_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01098_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01058_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01032_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01088_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01006_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01089_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01047_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01059_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01066_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01021_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01065_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01111_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01025_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01079_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01041_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01076_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <geom mesh="Bin_B04_01069_mesh" type="mesh" class="collision" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+    </body>
+  </worldbody>
+  <actuator />
+  <default>
+    <default class="visual">
+      <geom conaffinity="0" contype="0" group="1" type="mesh" />
+    </default>
+    <default class="collision">
+      <geom group="0" />
+    </default>
+  </default>
+</mujoco>

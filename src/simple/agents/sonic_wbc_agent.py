@@ -43,7 +43,7 @@ from .wbc_agent import WholeBodyControlAgent
 from simple.robots.g1_sonic import G1Sonic
 
 class SonicWbcAgent(WholeBodyControlAgent):
-    
+
     def __init__(self, robot: G1Sonic):
         self.robot = robot
 

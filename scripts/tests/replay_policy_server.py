@@ -66,6 +66,7 @@ class ReplayStore:
 
 class ReplayRequestHandler(BaseHTTPRequestHandler):
     store: ReplayStore
+    request_log: Path | None = None
 
     def _send_json(self, status: int, payload: dict[str, Any]) -> None:
         body = json.dumps(payload).encode("utf-8")
@@ -89,6 +90,14 @@ class ReplayRequestHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         request = json.loads(self.rfile.read(length) or b"{}")
         history = request.get("history") or {}
+        if self.request_log is not None:
+            # What the policy would actually be conditioned on. Lets a test
+            # assert the prompt reaching the policy without needing a model.
+            with open(self.request_log, "a") as log:
+                log.write(json.dumps({
+                    "reset": bool(history.get("reset")),
+                    "instruction": request.get("instruction"),
+                }) + "\n")
         actions = self.store.act(history)
         self._send_json(200, ResponseMessage(action=actions, err=0.0).serialize())
 
@@ -98,15 +107,22 @@ class ReplayRequestHandler(BaseHTTPRequestHandler):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Replay recorded SIMPLE datagen actions over HTTP.")
-    parser.add_argument("--data-root", required=True, help="Datagen run root, e.g. .test-output/datagen-smoke-...")
+    parser.add_argument("--data-root", help="Datagen run root, e.g. .test-output/datagen-smoke-... (resolved as <root>/<env_id>/level-0)")
+    parser.add_argument("--dataset-root", help="Lerobot root to replay from, used as-is. Needed for roots without a level-0 layer, e.g. a psi0 dataset.")
     parser.add_argument("--env-id", default="simple/G1WholebodyBendPickMP-v0")
     parser.add_argument("--episode-index", type=int, default=0)
     parser.add_argument("--chunk-size", type=int, default=64)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=21090)
+    parser.add_argument("--log-requests", help="Append one JSON line per /act request (reset flag + instruction) to this file.")
     args = parser.parse_args()
 
-    dataset_root = _resolve_dataset_root(Path(args.data_root), args.env_id) / "level-0"
+    if bool(args.data_root) == bool(args.dataset_root):
+        parser.error("pass exactly one of --data-root or --dataset-root")
+    if args.dataset_root:
+        dataset_root = Path(args.dataset_root)
+    else:
+        dataset_root = _resolve_dataset_root(Path(args.data_root), args.env_id) / "level-0"
     actions = _load_episode_actions(dataset_root, args.episode_index)
     store = ReplayStore(actions, chunk_size=args.chunk_size)
 
@@ -114,6 +130,11 @@ def main() -> None:
         pass
 
     Handler.store = store
+    if args.log_requests:
+        log_path = Path(args.log_requests)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("")
+        Handler.request_log = log_path
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(
         f"[replay_policy_server] serving {len(actions)} recorded actions from "

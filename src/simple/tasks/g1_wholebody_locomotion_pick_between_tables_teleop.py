@@ -87,7 +87,7 @@ class G1WholebodyLocomotionPickBetweenTablesTaskTeleop(Task):
                 " pick up the {} from table1,locomotion to table2,and place  on table2.",
             ]
         ),
-        target=TargetDRCfg(asset_id="graspnet1b:0"),  # e.g., "primitive:cube"
+        target=TargetDRCfg(asset_id="totes:bin_b04"),  # e.g., "primitive:cube"
         container=TargetDRCfg(asset_id="objects:0"),  # or used "graspnet1b:6"
         distractors=DistractorDRCfg(
             res_id="graspnet1b",
@@ -100,7 +100,7 @@ class G1WholebodyLocomotionPickBetweenTablesTaskTeleop(Task):
             robot_region=Box(low=[-0.63, 0, 0], high=[-0.65, 0, 0]),
             # robot_orientation_region=Box(low=[0.717, 0, 0, -0.717], high=[0.717, 0, 0, -0.717]),
             # robot_region=Box(low=[-1.15, 0.0,], high=[-1.17, 0.0]),
-            target_region=Box(low=[-0.33, -0.04], high=[-0.31, 0.04]),
+            target_region=Box(low=[-0.20, -0.04], high=[-0.22, 0.04]),
             container_region=Box(low=[-2.45, 0.15], high=[-2.5, 0.25]),
             container_rotate_z=Box(low=1.57, high=1.57),
             distractors_region=[
@@ -110,7 +110,7 @@ class G1WholebodyLocomotionPickBetweenTablesTaskTeleop(Task):
                 Box(low=[-2.8, -0.3], high=[-2.6, 0.3]),  # distractor_3 on table2
             ],
             target_stable_indices=[0],
-            target_rotate_z=Box(low=-0.15, high=0.15),
+            target_rotate_z=Box(low=np.pi, high=np.pi),
             obj_surface_map={
                 "target": "table",
                 "container": "table2",
@@ -155,7 +155,7 @@ class G1WholebodyLocomotionPickBetweenTablesTaskTeleop(Task):
         self,
         robot_uid: str = "g1_sonic",
         scene_uid: str | Scene = "hssd:scene6",
-        target_object: str | Object = "graspnet1b:0",
+        target_object: str | Object = "totes:bin_b04",
         controller_uid: str = "pd_joint_pos",  # pd_joint_vel, pd_ee_pose, pd_delta_ee_pose
         split: str = "train",  # train, val, test
         render_hz: int | None = None,

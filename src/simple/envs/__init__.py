@@ -419,6 +419,16 @@ register(
     kwargs={"task":"g1_wholebody_locomotion_pick_between_tables_teleop"},
 )
 register(
+    id="simple/G1WholebodyLocomotionPickTotesShelfToTableTeleop-v0",
+    entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
+    kwargs={"task":"g1_wholebody_locomotion_pick_totes_shelf_to_table_teleop"},
+)
+register(
+    id="simple/G1WholebodyLocomotionPickTotesShelfToTableMirrorTeleop-v0",
+    entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
+    kwargs={"task":"g1_wholebody_locomotion_pick_totes_shelf_to_table_mirror_teleop"},
+)
+register(
     id="simple/G1WholebodyHandoverTeleop-v0",
     entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
     kwargs={"task":"g1_wholebody_handover_teleop"},
@@ -449,8 +459,41 @@ register(
     entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
     kwargs={"task":"g1_wholebody_open_trash_can_teleop"},
 )
+register(
+    id="simple/G1IndustrialScrewToToteTeleop-v0",
+    entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
+    kwargs={"task":"g1_industrial_screw_to_tote_teleop"},
+)
+register(
+    id="simple/G1IndustrialToteToRackTeleop-v0",
+    entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
+    kwargs={"task":"g1_industrial_tote_to_rack_teleop"},
+)
+register(
+    id="simple/G1IndustrialScrewdriverToToteTeleop-v0",
+    entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
+    kwargs={"task":"g1_industrial_screwdriver_to_tote_teleop"},
+)
+register(
+    id="simple/G1IndustrialSortingTeleop-v0",
+    entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
+    kwargs={"task":"g1_industrial_sorting_teleop"},
+)
 
-
+# psi0 aliases for the shelf-to-table totes family. One id per task: the
+# single-table original and the mirrored left/right variant. Keep them
+# distinct -- repointing an existing id at a different task makes every past
+# run under that id unreproducible.
+register(
+    id="simple/G1PickUpToteFromShelfToDeskPsi0-v0",
+    entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
+    kwargs={"task":"g1_wholebody_locomotion_pick_totes_shelf_to_table_teleop"},
+)
+register(
+    id="simple/G1PickUpToteFromShelfToDeskMirrorPsi0-v0",
+    entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
+    kwargs={"task":"g1_wholebody_locomotion_pick_totes_shelf_to_table_mirror_teleop"},
+)
 # def task_register(task):
 #     register(
 #         id="FrankaTabletopGrasp-v0",

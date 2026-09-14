@@ -1,0 +1,1311 @@
+#usda 1.0
+(
+    customLayerData = {
+        dictionary cameraSettings = {
+            dictionary Front = {
+                double3 position = (5, 0, 0)
+                double radius = 5
+            }
+            dictionary Perspective = {
+                double3 position = (6.832592002934508, -3.089288971512531, 4.2729035107471915)
+                double3 target = (-62.17919261502122, -5.817152043189565, -32.466679697420695)
+            }
+            dictionary Right = {
+                double3 position = (0, -5, 0)
+                double radius = 5
+            }
+            dictionary Top = {
+                double3 position = (0, 0, 5)
+                double radius = 5
+            }
+            string boundCamera = "/OmniverseKit_Persp"
+        }
+        dictionary metricsAssembler = {
+            dictionary "/World/Container_A02_55x39x26cm_PR_V_NVD_01" = {
+            }
+            dictionary "/World/GravityShelfBinOrganizer_A02_01" = {
+            }
+            dictionary "/World/MobileShelvingCart_C05_01" = {
+            }
+            dictionary "/World/TableTrolley_B02_01" = {
+            }
+            int version = 1
+        }
+        dictionary omni_layer = {
+            string authoring_layer = "./IH_basic.usd"
+            dictionary locked = {
+            }
+            dictionary muteness = {
+            }
+        }
+        dictionary renderSettings = {
+        }
+    }
+    defaultPrim = "World"
+    endTimeCode = 1000000
+    metersPerUnit = 1
+    startTimeCode = 0
+    timeCodesPerSecond = 60
+    upAxis = "Z"
+)
+
+def Xform "World"
+{
+    def Xform "GroundPlane"
+    {
+        quatf xformOp:orient = (1, 0, 0, 0)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        def Mesh "CollisionMesh"
+        {
+            uniform bool doubleSided = 0
+            int[] faceVertexCounts = [4]
+            int[] faceVertexIndices = [0, 1, 2, 3]
+            normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)]
+            point3f[] points = [(-25, -25, 0), (25, -25, 0), (25, 25, 0), (-25, 25, 0)]
+            color3f[] primvars:displayColor = [(0.5, 0.5, 0.5)]
+            texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                interpolation = "varying"
+            )
+            quatf xformOp:orient = (1, 0, 0, 0)
+            float3 xformOp:scale = (1, 1, 1)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+
+        def Plane "CollisionPlane" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            uniform token axis = "Z"
+            uniform token purpose = "guide"
+        }
+    }
+
+    def PhysicsScene "PhysicsScene" (
+        prepend apiSchemas = ["PhysxSceneAPI"]
+    )
+    {
+    }
+
+    def "TableTrolley_B02_01" (
+        prepend payload = @https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/DigitalTwin/Assets/Warehouse/Equipment/Carts/TableTrolley_B/TableTrolley_B02_01.usd@
+    )
+    {
+        quatf xformOp:orient = (1, 0, 0, 0)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:scale:unitsResolve = (0.01, 0.01, 0.01)
+        double3 xformOp:translate = (0.42396628856658936, -3.2933483123779297, -5.987336066937132e-7)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale", "xformOp:scale:unitsResolve"]
+
+        over "sm_tabletrolley_b02_frontwheelbodyright_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_tabletrolley_b02_frontwheelleft_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_tabletrolley_b02_backwheels_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_tabletrolley_b02_frontwheelright_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_tabletrolley_b02_backwheelsbody_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_tabletrolley_b02_shelfbottom_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_tabletrolley_b02_frame_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_tabletrolley_b02_frontwheelbodyleft_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_tabletrolley_b02_backjointswheels_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_tabletrolley_b02_frontjointwheelleft_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_tabletrolley_b02_shelf_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_tabletrolley_b02_frontjointwheelright_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+    }
+
+    def "longbox_a01" (
+        prepend payload = @https://omniverse-content-staging.s3.us-west-2.amazonaws.com/Assets/simready_content/common_assets/props/longbox_a01/longbox_a01.usd@
+        variants = {
+            string PhysicsVariant = "RigidBody"
+        }
+    )
+    {
+        float3 xformOp:rotateXYZ = (0, 0, 0)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0.39650318026542664, -3.282914638519287, 0.8537976741790771)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+    }
+
+    def SphereLight "SphereLight" (
+        prepend apiSchemas = ["ShapingAPI"]
+    )
+    {
+        float3[] extent = [(-50, -50, -50), (50, 50, 50)]
+        color3f inputs:color = (0.28957528, 0.2895724, 0.2895724)
+        float inputs:intensity = 30000
+        float inputs:radius = 2
+        float inputs:shaping:cone:angle = 180
+        float inputs:shaping:cone:softness
+        float inputs:shaping:focus
+        color3f inputs:shaping:focusTint
+        asset inputs:shaping:ies:file
+        quatd xformOp:orient = (0.5000000000000001, 0.5, 0.49999999999999994, 0.5)
+        double3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (2.054634559868267, -3.935522322619131, 3.759346746477084)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+    }
+
+    def "GravityShelfBinOrganizer_A02_01" (
+        prepend payload = @https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/DigitalTwin/Assets/Warehouse/Equipment/Carts/GravityShelfBinOrganizer_A/GravityShelfBinOrganizer_A02_01.usd@
+    )
+    {
+        quatf xformOp:orient = (0.4461978, 0, 0, -0.89493436)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:scale:unitsResolve = (0.01, 0.01, 0.01)
+        double3 xformOp:translate = (0.820842984141761, -1.4564481030293857, -1.869794157283167e-7)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale", "xformOp:scale:unitsResolve"]
+
+        over "sm_gravityshelfbinorganizer_a02_backjointwheelright_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_backjointwheelleft_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_frontjointwheelright_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_frontwheelleft_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_handle_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_body_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_boltsjoints_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box79_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box77_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box74_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box71_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box70_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box69_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box68_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box65_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box66_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box63_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box62_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box61_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_backwheelbodyleft_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_frontwheelbodyleft_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box60_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box29_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box50_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box27_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box23_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box42_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box20_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box22_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box16_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box75_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box24_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box04_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box76_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box01_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box37_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box02_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box03_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box28_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box14_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_frontwheelbodyright_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box21_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box57_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box05_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box73_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box18_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box07_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box78_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box19_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box10_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box17_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box26_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box48_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_frontjointwheelleft_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box11_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box12_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box13_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box30_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box15_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box32_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box06_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box52_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box33_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box25_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box34_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box80_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box72_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box53_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box47_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box08_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box36_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box39_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box67_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box31_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box43_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box35_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box40_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box41_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box44_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box56_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_backwheelleft_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box46_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_frontwheelright_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box49_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_backwheelright_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box09_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box55_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box51_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box45_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box54_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box58_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_backwheelbodyright_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box64_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box38_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_gravityshelfbinorganizer_a02_box59_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+    }
+
+    def Xform "screw_95_physics" (
+        prepend references = @https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1/Isaac/Props/Flip_Stack/screw_95_physics.usd@
+    )
+    {
+        quatf xformOp:orient = (1, 0, 0, 0)
+        float3 xformOp:scale = (1, 1, 1)
+        float3 xformOp:translate = (0.4878992, -2.3373551, 0.8634041)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        over "Cylinder"
+        {
+            double3 xformOp:rotateXYZ = (0, 0, 0)
+            double3 xformOp:scale = (2, 2.5, 2)
+            double3 xformOp:translate = (0, -0.00025274817911670125, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+        }
+    }
+
+    def "bin_b02" (
+        prepend payload = @https://omniverse-content-staging.s3.us-west-2.amazonaws.com/Assets/simready_content/common_assets/props/bin_b02/bin_b02.usd@
+        variants = {
+            string PhysicsVariant = "RigidBody"
+        }
+    )
+    {
+        float3 xformOp:rotateXYZ = (0, 0, 0)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0.514499306678772, -2.3423819541931152, 0.8537973761558533)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+    }
+
+    def Xform "screw_95_physics_01" (
+        prepend references = @https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1/Isaac/Props/Flip_Stack/screw_95_physics.usd@
+    )
+    {
+        vector3f physics:angularVelocity = (0.45217213, 0.33515477, -0.007262568)
+        vector3f physics:velocity = (0.000060090137, -0.000035863894, 0.000006221904)
+        quatf xformOp:orient = (0.36247954, -0.05997944, -0.07025678, -0.9274023)
+        float3 xformOp:scale = (1, 1, 1)
+        float3 xformOp:translate = (0.55090845, -2.7886264, 0.86363447)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        over "Cylinder"
+        {
+            double3 xformOp:rotateXYZ = (0, 0, 0)
+            double3 xformOp:scale = (2, 2.5, 2)
+            double3 xformOp:translate = (0, -0.00025274817911670125, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+        }
+    }
+
+    def Xform "screw_95_physics_02" (
+        prepend references = @https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1/Isaac/Props/Flip_Stack/screw_95_physics.usd@
+    )
+    {
+        vector3f physics:angularVelocity = (0.45217213, 0.33515477, -0.007262568)
+        vector3f physics:velocity = (0.000060090137, -0.000035863894, 0.000006221904)
+        quatf xformOp:orient = (0.57607126, -0.07519445, -0.05365951, -0.81216276)
+        float3 xformOp:scale = (1, 1, 1)
+        float3 xformOp:translate = (0.5882885, -2.858138, 0.86363447)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        over "Cylinder"
+        {
+            double3 xformOp:rotateXYZ = (0, 0, 0)
+            double3 xformOp:scale = (2, 2.5, 2)
+            double3 xformOp:translate = (0, -0.00025274817911670125, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+        }
+    }
+
+    def Xform "screw_95_physics_03" (
+        prepend references = @https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1/Isaac/Props/Flip_Stack/screw_95_physics.usd@
+    )
+    {
+        vector3f physics:angularVelocity = (0.45217213, 0.33515477, -0.007262568)
+        vector3f physics:velocity = (0.000060090137, -0.000035863894, 0.000006221904)
+        quatf xformOp:orient = (0.36247954, -0.05997944, -0.07025678, -0.9274023)
+        float3 xformOp:scale = (1, 1, 1)
+        float3 xformOp:translate = (0.60573125, -2.8192878, 0.86363447)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        over "Cylinder"
+        {
+            double3 xformOp:rotateXYZ = (0, 0, 0)
+            double3 xformOp:scale = (2, 2.5, 2)
+            double3 xformOp:translate = (0, -0.00025274817911670125, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+        }
+    }
+
+    def Xform "screw_95_physics_04" (
+        prepend references = @https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1/Isaac/Props/Flip_Stack/screw_95_physics.usd@
+    )
+    {
+        vector3f physics:angularVelocity = (0.45217213, 0.33515477, -0.007262568)
+        vector3f physics:velocity = (0.000060090137, -0.000035863894, 0.000006221904)
+        quatf xformOp:orient = (-0.08940949, -0.022329241, -0.0896379, -0.9917018)
+        float3 xformOp:scale = (1, 1, 1)
+        float3 xformOp:translate = (0.5963941, -2.7722943, 0.86363447)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        over "Cylinder"
+        {
+            double3 xformOp:rotateXYZ = (0, 0, 0)
+            double3 xformOp:scale = (2, 2.5, 2)
+            double3 xformOp:translate = (0, -0.00025274817911670125, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+        }
+    }
+
+    def Xform "screw_95_physics_05" (
+        prepend references = @https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1/Isaac/Props/Flip_Stack/screw_95_physics.usd@
+    )
+    {
+        vector3f physics:angularVelocity = (0.013496674, 0.13426751, -0.009453595)
+        vector3f physics:velocity = (-0.00007811433, 0.00008874574, -0.0000147637)
+        quatf xformOp:orient = (0.70308733, 0.7030874, 0.07528731, 0.07528731)
+        float3 xformOp:scale = (1, 1, 1)
+        float3 xformOp:translate = (0.53274465, -2.8622165, 0.87972665)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        over "Cylinder"
+        {
+            double3 xformOp:rotateXYZ = (0, 0, 0)
+            double3 xformOp:scale = (2, 2.5, 2)
+            double3 xformOp:translate = (0, -0.00025274817911670125, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+        }
+    }
+
+    def "bin_b04" (
+        prepend payload = @https://omniverse-content-staging.s3.us-west-2.amazonaws.com/Assets/simready_content/common_assets/props/bin_b04/bin_b04.usd@
+        variants = {
+            string PhysicsVariant = "RigidBody"
+        }
+    )
+    {
+        float3 xformOp:rotateXYZ = (0, 0, 15.3)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0.5248273611068726, -3.806801037658921, 0.8537972569465637)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+    }
+
+    def Xform "factory_gear_large" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+        prepend references = @https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1/Isaac/IsaacLab/Factory/factory_gear_large.usd@
+    )
+    {
+        rel material:binding = </World/TableTrolley_B02_01/Looks/opaque__metal__glossy_a_tabletrolley_b> (
+            bindMaterialAs = "weakerThanDescendants"
+        )
+        quatd xformOp:orient = (1, 0, 0, 0)
+        double3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0.5533374515733246, -3.4215985274009593, 0.84869)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        over "factory_gear_large"
+        {
+            over "collisions"
+            {
+                quatd xformOp:orient = (1, 0, 0, 0)
+                double3 xformOp:scale = (1, 1, 1)
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+            }
+        }
+    }
+
+    def Xform "factory_gear_large_01" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+        prepend references = @https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1/Isaac/IsaacLab/Factory/factory_gear_large.usd@
+    )
+    {
+        rel material:binding = </World/TableTrolley_B02_01/Looks/opaque__metal__glossy_a_tabletrolley_b> (
+            bindMaterialAs = "weakerThanDescendants"
+        )
+        quatd xformOp:orient = (1, 0, 0, 0)
+        double3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0.6041414181168804, -3.5034170405766445, 0.8486900000000018)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        over "factory_gear_large"
+        {
+            over "collisions"
+            {
+                quatd xformOp:orient = (1, 0, 0, 0)
+                double3 xformOp:scale = (1, 1, 1)
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+            }
+        }
+    }
+
+    def Xform "factory_gear_large_02" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+        prepend references = @https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1/Isaac/IsaacLab/Factory/factory_gear_large.usd@
+    )
+    {
+        rel material:binding = </World/TableTrolley_B02_01/Looks/opaque__metal__glossy_a_tabletrolley_b> (
+            bindMaterialAs = "weakerThanDescendants"
+        )
+        quatd xformOp:orient = (1, 0, 0, 0)
+        double3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0.6562332111192238, -3.4304866163882703, 0.8486899999999983)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        over "factory_gear_large"
+        {
+            over "collisions"
+            {
+                quatd xformOp:orient = (1, 0, 0, 0)
+                double3 xformOp:scale = (1, 1, 1)
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+            }
+        }
+    }
+
+    def Xform "t_connector_physics_01" (
+        prepend references = @https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1/Isaac/Props/Flip_Stack/t_connector_physics.usd@
+    )
+    {
+        vector3f physics:angularVelocity = (5.4632354, -9.858372, 2.0477586)
+        vector3f physics:velocity = (-0.006583791, -0.000047147096, -0.01159263)
+        quatd xformOp:orient = (0.9507927764797102, 0.012681471045176357, -0.017458883260478248, -0.30907517512966204)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0.6541899753455875, -3.109575783981382, 0.8660691380500893)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        over "Body_182"
+        {
+            double3 xformOp:rotateXYZ = (90, 0, 33.20000049471855)
+            double3 xformOp:scale = (1.5, 1.5, 1.5)
+            double3 xformOp:translate = (0.08497471540585311, 0.0011268588063182428, 0.0029430156764989057)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+        }
+    }
+
+    def Xform "t_connector_physics_02" (
+        prepend references = @https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1/Isaac/Props/Flip_Stack/t_connector_physics.usd@
+    )
+    {
+        vector3f physics:angularVelocity = (5.4632354, -9.858372, 2.0477586)
+        vector3f physics:velocity = (-0.006583791, -0.000047147096, -0.01159263)
+        quatd xformOp:orient = (0.5589492540107394, 0.02074189738083358, -0.005950294582247743, -0.8289210451715322)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0.6147708403261464, -3.206713931200702, 0.8660691380500923)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        over "Collision"
+        {
+            over "Cube_01"
+            {
+                float3 xformOp:rotateZYX = (-90, 0, 0)
+                float3 xformOp:scale = (0.0375, 0.0075, 0.11399999)
+                double3 xformOp:translate = (0, -1.8906342735119974e-18, -0.00851465980968252)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZYX", "xformOp:scale"]
+            }
+        }
+    }
+
+    def Xform "t_connector_physics_03" (
+        prepend references = @https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1/Isaac/Props/Flip_Stack/t_connector_physics.usd@
+    )
+    {
+        vector3f physics:angularVelocity = (5.4632354, -9.858372, 2.0477586)
+        vector3f physics:velocity = (-0.006583791, -0.000047147096, -0.01159263)
+        quatd xformOp:orient = (0.7370132166266495, 0.01877972842130036, -0.01062798725041638, -0.6755337787298773)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0.6618570045707263, -3.2860200999389684, 0.8660691380501051)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        over "Collision"
+        {
+            over "Cube_01"
+            {
+                float3 xformOp:rotateZYX = (-90, 0, 0)
+                float3 xformOp:scale = (0.0375, 0.0075, 0.11399999)
+                double3 xformOp:translate = (0, -1.8906342735119974e-18, -0.00851465980968252)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZYX", "xformOp:scale"]
+            }
+        }
+    }
+
+    def Xform "t_connector_physics_04" (
+        prepend references = @https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1/Isaac/Props/Flip_Stack/t_connector_physics.usd@
+    )
+    {
+        vector3f physics:angularVelocity = (5.4632354, -9.858372, 2.0477586)
+        vector3f physics:velocity = (-0.006583791, -0.000047147096, -0.01159263)
+        quatd xformOp:orient = (0.9507927764797102, 0.012681471045176357, -0.017458883260478248, -0.30907517512966204)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0.6541899753455875, -3.109575783981382, 0.8660691380500893)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+    }
+
+    def "MobileShelvingCart_C05_01" (
+        prepend payload = @https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/DigitalTwin/Assets/Warehouse/Equipment/Carts/MobileShelvingCart_C/MobileShelvingCart_C05_01.usd@
+    )
+    {
+        quatf xformOp:orient = (0.8910065, 0, 0, 0.4539905)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:scale:unitsResolve = (0.01, 0.01, 0.01)
+        double3 xformOp:translate = (1.2762521505355835, -5.342392921447754, 8.06370735517703e-7)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale", "xformOp:scale:unitsResolve"]
+
+        over "sm_mobileshelvingcart_c05_shelfs_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_mobileshelvingcart_c05_boltsjoints_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_mobileshelvingcart_c05_frame_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_mobileshelvingcart_c05_backwheelbodyleft_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_mobileshelvingcart_c05_backjointwheelleft_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_mobileshelvingcart_c05_backwheelbodyright_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_mobileshelvingcart_c05_backwheelleft_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_mobileshelvingcart_c05_backwheelright_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_mobileshelvingcart_c05_frontwheelright_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_mobileshelvingcart_c05_frontjointwheelleft_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_mobileshelvingcart_c05_backjointwheelright_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_mobileshelvingcart_c05_frontjointwheelright_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_mobileshelvingcart_c05_frontwheelleft_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_mobileshelvingcart_c05_frontwheelbodyleft_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+
+        over "sm_mobileshelvingcart_c05_frontwheelbodyright_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+        )
+        {
+        }
+    }
+
+    def "bin_b04_02" (
+        prepend payload = @https://omniverse-content-staging.s3.us-west-2.amazonaws.com/Assets/simready_content/common_assets/props/bin_b04/bin_b04.usd@
+        variants = {
+            string PhysicsVariant = "RigidBody"
+        }
+    )
+    {
+        vector3f physics:angularVelocity = (-0.049043845, 0.055942345, 0.09756646)
+        vector3f physics:velocity = (0.0035765364, 0.001232451, 0.021887258)
+        quatf xformOp:orient = (0.8712179, -0.09516735, 0.18685445, 0.4438558)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (1.2235063314437866, -5.204395294189453, 0.9342715740203857)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        over "bin_b04_inst"
+        {
+            over "Bin_B04_01"
+            {
+                float3 xformOp:rotateXYZ = (0, 0, 0)
+                float3 xformOp:scale = (1, 1, 1)
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+            }
+        }
+    }
+
+    def "bin_b04_03" (
+        prepend payload = @https://omniverse-content-staging.s3.us-west-2.amazonaws.com/Assets/simready_content/common_assets/props/bin_b04/bin_b04.usd@
+        variants = {
+            string PhysicsVariant = "RigidBody"
+        }
+    )
+    {
+        vector3f physics:angularVelocity = (-0.049043845, 0.055942345, 0.09756646)
+        vector3f physics:velocity = (0.0035765364, 0.001232451, 0.021887258)
+        quatf xformOp:orient = (0.8712179, -0.09516735, 0.18685445, 0.4438558)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (1.2235063314438077, -5.2043952941894185, 1.282116475741391)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        over "bin_b04_inst"
+        {
+            over "Bin_B04_01"
+            {
+                float3 xformOp:rotateXYZ = (0, 0, 0)
+                float3 xformOp:scale = (1, 1, 1)
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+            }
+        }
+    }
+}
+
+def Xform "Environment"
+{
+    quatd xformOp:orient = (1, 0, 0, 0)
+    double3 xformOp:scale = (1, 1, 1)
+    double3 xformOp:translate = (0, 0, 0)
+    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+}
+
+def "Render" (
+    hide_in_stage_window = true
+    no_delete = true
+)
+{
+    def "OmniverseKit"
+    {
+        def "HydraTextures" (
+            hide_in_stage_window = true
+            no_delete = true
+        )
+        {
+            def RenderProduct "omni_kit_widget_viewport_ViewportTexture_0" (
+                prepend apiSchemas = ["OmniRtxSettingsCommonAdvancedAPI_1", "OmniRtxSettingsRtAdvancedAPI_1", "OmniRtxSettingsPtAdvancedAPI_1", "OmniRtxPostColorGradingAPI_1", "OmniRtxPostChromaticAberrationAPI_1", "OmniRtxPostBloomPhysicalAPI_1", "OmniRtxPostMatteObjectAPI_1", "OmniRtxPostCompositingAPI_1", "OmniRtxPostDofAPI_1", "OmniRtxPostMotionBlurAPI_1", "OmniRtxPostTvNoiseAPI_1", "OmniRtxPostTonemapIrayReinhardAPI_1", "OmniRtxPostDebugSettingsAPI_1", "OmniRtxDebugSettingsAPI_1"]
+                hide_in_stage_window = true
+                no_delete = true
+            )
+            {
+                rel camera = </OmniverseKit_Persp>
+                token omni:rtx:background:source:texture:textureMode = "repeatMirrored"
+                token omni:rtx:background:source:type = "domeLight"
+                bool omni:rtx:dlss:frameGeneration = 0
+                bool omni:rtx:material:db:nonVisualMaterialCSV:enabled = 0
+                bool omni:rtx:material:db:syncLoads = 1
+                token omni:rtx:post:dlss:execMode = "performance"
+                bool omni:rtx:post:registeredCompositing:invertColorCorrection = 1
+                bool omni:rtx:post:registeredCompositing:invertToneMap = 1
+                bool omni:rtx:pt:lightcache:cached:dontResolveConflicts = 1
+                int omni:rtx:pt:maxSamplesPerLaunch = 2073600
+                int omni:rtx:pt:mgpu:maxPixelsPerRegionExponent = 12
+                color3f omni:rtx:rt:ambientLight:color = (0.1, 0.1, 0.1)
+                bool omni:rtx:rt:demoire = 0
+                bool omni:rtx:rt:ecoMode:enabled
+                bool omni:rtx:rt:lightcache:spatialCache:dontResolveConflicts = 1
+                bool omni:rtx:scene:hydra:materialSyncLoads = 1
+                bool omni:rtx:scene:hydra:mdlMaterialWarmup = 1
+                uint omni:rtx:viewTile:limit = 4294967295
+                rel orderedVars = </Render/Vars/LdrColor>
+                custom bool overrideClipRange = 0
+                uniform int2 resolution = (1966, 709)
+            }
+        }
+    }
+
+    def RenderSettings "OmniverseGlobalRenderSettings" (
+        prepend apiSchemas = ["OmniRtxSettingsGlobalRtAdvancedAPI_1", "OmniRtxSettingsGlobalPtAdvancedAPI_1"]
+        no_delete = true
+    )
+    {
+        rel products = </Render/OmniverseKit/HydraTextures/omni_kit_widget_viewport_ViewportTexture_0>
+    }
+
+    def "Vars"
+    {
+        def RenderVar "LdrColor" (
+            hide_in_stage_window = true
+            no_delete = true
+        )
+        {
+            uniform string sourceName = "LdrColor"
+        }
+    }
+}
+

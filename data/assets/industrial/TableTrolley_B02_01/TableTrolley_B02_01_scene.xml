@@ -1,0 +1,10 @@
+<mujoco model="TableTrolley_B02_01_scene">
+  <compiler meshdir="." angle="radian"/>
+  <option timestep="0.005" gravity="0 0 -9.81"/>
+  <visual><global offwidth="1280" offheight="720"/></visual>
+  <include file="TableTrolley_B02_01.mjcf.xml"/>
+  <worldbody>
+    <light pos="0 0 4" dir="0 0 -1"/>
+    <geom name="floor" type="plane" size="5 5 0.1" rgba="0.4 0.4 0.4 1"/>
+  </worldbody>
+</mujoco>
