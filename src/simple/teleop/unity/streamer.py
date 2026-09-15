@@ -450,9 +450,21 @@ class UnityStreamerCore:
         self.source = source
         self.reset_status()
 
-    def reset_status(self) -> None:
+    def reset_status(self, initial_yaw: float = 0.0) -> None:
+        """Return to the start-of-episode state.
+
+        ``initial_yaw`` is the robot's actual spawn heading, and defaulting it
+        to zero is wrong on any task that spawns the robot turned. The lower
+        body's yaw PD controller tracks ``target_yaw`` as a world-frame
+        heading, so starting it at zero hands the controller a heading error it
+        did not earn, and the robot spins back toward world yaw 0 the moment
+        the episode begins.
+
+        Same contract and same reasoning as ``VuerStreamer.reset_status``; the
+        two are called through the same line in the agent.
+        """
         self.current_base_height = self.HEIGHT_DEFAULT
-        self.target_yaw = 0.0
+        self.target_yaw = float(initial_yaw)
         self._activation_last = False
         self._policy_last = False
         self._collection_last = False
@@ -572,8 +584,8 @@ def make_unity_streamer(source: UnityTrackerSource):
         def stop_streaming(self) -> None:
             pass
 
-        def reset_status(self) -> None:
-            self._core.reset_status()
+        def reset_status(self, initial_yaw: float = 0.0) -> None:
+            self._core.reset_status(initial_yaw)
 
         @property
         def current_base_height(self) -> float:

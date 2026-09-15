@@ -431,6 +431,42 @@ def test_navigation_and_height() -> None:
     )
 
 
+def test_reset_keeps_the_spawn_heading() -> None:
+    """reset_status must start target_yaw at the robot's spawn yaw.
+
+    The agent calls this with initial_yaw on every episode reset, and the lower
+    body's yaw PD controller tracks target_yaw as a world-frame heading.
+    Starting it at zero on a task that spawns the robot turned hands the
+    controller an error it did not earn, and the robot spins back toward world
+    yaw 0 the moment the episode begins.
+
+    Same contract as VuerStreamer.reset_status -- both are reached through one
+    line in the agent, so a signature that does not match is a TypeError at the
+    first reset rather than at import.
+    """
+    print("\n[4b] Reset preserva o yaw de spawn")
+
+    source = UnityTrackerSource()
+    core = UnityStreamerCore(source)
+
+    core.reset_status(initial_yaw=1.57)
+    check("yaw comeca no spawn", core.target_yaw == 1.57, f"{core.target_yaw}")
+    check("altura volta ao padrao", core.current_base_height == core.HEIGHT_DEFAULT)
+
+    core.target_yaw = 3.0
+    core.reset_status()
+    check("sem argumento, volta a zero", core.target_yaw == 0.0)
+
+    # The agent passes it by keyword, so accepting it positionally is not
+    # enough -- that is exactly how this broke.
+    try:
+        core.reset_status(initial_yaw=-0.5)
+        accepted = core.target_yaw == -0.5
+    except TypeError:
+        accepted = False
+    check("aceita initial_yaw como keyword", accepted)
+
+
 def test_edge_triggered_toggles() -> None:
     """Held buttons are sampled 50 times a second; only the press counts."""
     print("\n[5] Toggles por borda de subida")
@@ -568,6 +604,7 @@ def main() -> int:
     test_grip_offset_parsing()
     test_dead_zone()
     test_navigation_and_height()
+    test_reset_keeps_the_spawn_heading()
     test_edge_triggered_toggles()
     test_finger_encoding()
     test_button_poller()
