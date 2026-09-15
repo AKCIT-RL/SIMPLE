@@ -1,0 +1,41 @@
+# Eval sources for the shelf-to-table totes family.
+#
+# Each entry is a lerobot root -- a dir holding meta/, data/, videos/ -- which
+# is what postprocess_psi0_sonic.py emits and what
+# `render-decoupled-wbc --save-dir` writes. The eval samples starting states
+# (and prompts) from these; --num-episodes is the total, split evenly between
+# them so a large corpus doesn't drown out a small one.
+#
+#   uv run eval-decoupled-wbc \
+#       simple/G1PickUpToteFromShelfToDeskMirrorPsi0-v0 psi0 train \
+#       --eval-config configs/evals/shelf_to_dual_table.yaml \
+#       --num-episodes 20 --seed 0 \
+#       --host 127.0.0.1 --port 21075 --headless
+#
+# Adjust the paths to wherever your psi0 corpora live.
+
+datasets:
+  # Single-table original. Its recorded prompt ("...bring it to the table.")
+  # doesn't name a side, but the mirrored env scores strictly on the commanded
+  # side -- so let the task rebuild a side-aware prompt instead of replaying an
+  # ambiguous one. `prompt: task` also drops the episode's recorded language
+  # randomizer state, without which the old wording would be restored verbatim.
+  # Switch to the default `recorded` once these episodes are relabelled in
+  # postprocess (see docs/G1_SHELF_TO_DUAL_TABLE_GUIDE.md, §5).
+  - name: single_table
+    path: data/psi0_G1WholebodyLocomotionPickTotesShelfToTableTeleop
+    prompt: task
+    conditions:
+      # These captures store no hand/side at all, so without pinning them the
+      # task samples both per episode -- including "both hands", a bimanual
+      # grasp the policy was never taught, which would fail for reasons that
+      # have nothing to do with following the language. They were teleoperated
+      # right-handed; command that, and alternate the table side so an
+      # unbalanced corpus still yields a balanced set of commands.
+      pick_hand: right
+      target_side: [left, right]
+
+  # Mirrored left/right variant. Its prompts already encode hand and table side
+  # per episode, so replay them as recorded (the default).
+  - name: mirror
+    path: data/psi0_G1WholebodyLocomotionPickTotesShelfToTableMirrorTeleop

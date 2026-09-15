@@ -186,6 +186,26 @@ class Task(ABC):
             target_asset = target_dr(split)
             self._layout.add_object("target", target_asset)
 
+        # target group randomization (N pickable instances of the same asset,
+        # e.g. 1-2 identical totes -- unlike distractors, none of these are
+        # clutter, all of them are valid pick targets)
+        target_group_dr = self.dr.get_randomizer("target_group")
+        if target_group_dr is not None:
+            target_group_assets = target_group_dr(split)
+            for idx, obj in enumerate(target_group_assets):
+                self._layout.add_object(f"target_{idx}", obj)
+
+        # shelf group randomization (stochastic per-shelf/per-tier occupancy,
+        # e.g. multiple totes spread across estante_l1/estante_r1 -- unlike
+        # target_group, placement (pose) is sampled by the randomizer itself,
+        # not by spatial_dr, since it depends on fixed shelf/tier geometry)
+        shelf_group_dr = self.dr.get_randomizer("shelf_group")
+        if shelf_group_dr is not None:
+            shelf_group_placements = shelf_group_dr(split)
+            for idx, (obj, pose) in enumerate(shelf_group_placements):
+                self._layout.add_object(f"target_{idx}", obj)
+                self._layout.actors[f"target_{idx}"].pose = pose
+
         # distractor randomization
         distractors_dr = self.dr.get_randomizer("distractors")
         if distractors_dr is not None:

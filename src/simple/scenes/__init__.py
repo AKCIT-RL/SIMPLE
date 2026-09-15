@@ -9,3 +9,4 @@ Licensed under the terms in LICENSE file.
 from .scene_manager import SceneManager
 from .hssd import HssdSuite
 from .show_house import ShowHouse
+from .warehouse import WarehouseSceneManager, WarehouseSuite
