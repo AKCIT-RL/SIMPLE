@@ -156,6 +156,21 @@ class UnityRenderBridge:
             len(manifest["meshes"]),
             manifest["scene_id"],
         )
+        # How much of the scene is being drawn as collision hulls. A body with
+        # no visual geom falls back to every convex piece of its decomposition,
+        # and a warehouse fixture decomposes into over a thousand -- which is
+        # most of the client's load time, and why the shapes look faceted. If
+        # this number is large, the fix is upstream in the asset, not in the
+        # renderer.
+        fallback = sum(1 for g in manifest["geoms"] if g.get("from_collision"))
+        if fallback:
+            logger.info(
+                "%d of %d geoms came from collision hulls; those bodies have no "
+                "visual mesh in the compiled model",
+                fallback,
+                len(manifest["geoms"]),
+            )
+
         # The packet has to survive the path's MTU in one piece. Saying so at
         # export time beats discovering it as a channel that silently carries
         # nothing, which is exactly how this failed before.
