@@ -659,6 +659,7 @@ def _run_eval_worker(
         else:
             reset_kwargs = {}
 
+        os.environ["SIMPLE_EVAL_EPISODE_ID"] = task_id  # lets agents (e.g. wla_decoupled_wbc oracle) find per-episode data
         agent.reset(**reset_kwargs)
         episode_over = False
         while not episode_over:
