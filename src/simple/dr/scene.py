@@ -49,9 +49,14 @@ class TabletopSceneDR(SceneDR):
         table_cfg = state_dict["table"]
         self._inner_state = self.scene_manager[scene_uid]
 
-        self._inner_state.center_offset = state_dict["center_offset"]
-        self._inner_state.center_orientation = state_dict["center_orientation"]
-        
+        # center_offset/center_orientation only exist on HSSD scenes (see HssdSuite);
+        # other scene managers (e.g. warehouse) never set them, so treat them as
+        # optional here the same way table2 already is below.
+        if "center_offset" in state_dict:
+            self._inner_state.center_offset = state_dict["center_offset"]
+        if "center_orientation" in state_dict:
+            self._inner_state.center_orientation = state_dict["center_orientation"]
+
         table = AssetManager.create(
             "primitive:box",
             size=table_cfg["size"],

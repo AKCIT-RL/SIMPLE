@@ -19,7 +19,8 @@ import simple.envs as _  # import all envs
 if TYPE_CHECKING:
     from simple.envs.sonic_loco_manip import SonicLocoManipEnv
 
-from simple.agents.pico_decoupled_agent import PicoDecoupledAgent
+# from simple.agents.pico_decoupled_agent import PicoDecoupledAgent  # PICO (XRoboToolkit)
+from simple.agents.vuer_decoupled_agent import VuerDecoupledAgent
 from gear_sonic.utils.mujoco_sim.configs import SimLoopConfig
 from simple.robots.g1_sonic import G1Sonic
 
@@ -60,9 +61,63 @@ def _save_episode_env_config(exporter, task, episode_index: int):
             f.write(json.dumps(entry) + "\n")
 
 
-def _init_exporter(save_dir: str, task_prompt: str, robot_model, obj_names: list[str], joint_names: list[str]):
+def _prompt_task_instruction(default_instruction: str) -> str:
+    """Ask the operator to confirm/override the task instruction that will be
+    recorded with every frame of this session. Enter alone keeps the default."""
+    answer = input(f"[Record] Instrução da tarefa [{default_instruction}]: ").strip()
+    task_prompt = answer if answer else default_instruction
+    print(f'[Record] Usando instrução: "{task_prompt}"')
+    return task_prompt
+
+
+def _write_session_metadata(
+    run_save_dir: str,
+    operator: str,
+    session_ts: str,
+    env_id: str,
+    dr_level: int,
+    sim_mode: str,
+    task_prompt: str,
+):
+    """Write the initial session metadata.json, tracking pipeline status
+    (raw_captured -> uploaded -> rendered) separately from the LeRobot-native
+    meta/info.json (which Gr00tDataExporter owns and shouldn't be hand-edited)."""
+    import socket
+    metadata = {
+        "schema_version": 1,
+        "operator": operator,
+        "session_timestamp": session_ts,
+        "env_id": env_id,
+        "dr_level": dr_level,
+        "task_prompt": task_prompt,
+        "status": "raw_captured",
+        "num_episodes": None,
+        "created_at_utc": datetime.utcnow().isoformat() + "Z",
+        "sim_mode": sim_mode,
+        "hostname": socket.gethostname(),
+    }
+    with open(os.path.join(run_save_dir, "metadata.json"), "w") as f:
+        json.dump(metadata, f, indent=2)
+
+
+def _finalize_session_metadata(run_save_dir: str, episodes_saved: int):
+    """Patch num_episodes/finished_at_utc into metadata.json on exit (normal
+    completion or interruption), so a partial session still has an honest
+    episode count for the pre-upload validator to check."""
+    meta_path = os.path.join(run_save_dir, "metadata.json")
+    if not os.path.exists(meta_path):
+        return
+    with open(meta_path, "r") as f:
+        metadata = json.load(f)
+    metadata["num_episodes"] = episodes_saved
+    metadata["finished_at_utc"] = datetime.utcnow().isoformat() + "Z"
+    with open(meta_path, "w") as f:
+        json.dump(metadata, f, indent=2)
+
+
+def _init_exporter(save_dir: str, task_prompt: str, robot_model, obj_names: list[str], joint_names: list[str], operator: str):
     """Create a Gr00tDataExporter for LeRobot-format recording."""
-    from decoupled_wbc.data.exporter import Gr00tDataExporter
+    from decoupled_wbc.data.exporter import Gr00tDataExporter, DataCollectionInfo
     from decoupled_wbc.data.utils import get_dataset_features, get_modality_config
 
     features = get_dataset_features(robot_model)
@@ -95,8 +150,27 @@ def _init_exporter(save_dir: str, task_prompt: str, robot_model, obj_names: list
         features=features,
         modality_config=modality_config,
         task=task_prompt,
+        data_collection_info=DataCollectionInfo(teleoperator_username=operator),
     )
     return exporter
+
+
+def _object_poses_schema(task, obj_names: list[str]) -> list[str]:
+    """Names for the fixed `observation.object_poses` schema. For tasks whose
+    tracked-object count is stochastic per reset (currently `shelf_group`),
+    returns a *fixed*, padded name list sized to the task's true upper bound
+    (`ShelfGroupDRCfg.max_total_count()`) so every episode in a recording
+    session writes the same feature shape -- frames for objects absent this
+    episode are zero-padded (see `_build_frame`). This is a hard constraint
+    of the underlying LeRobot dataset format (one fixed `features` schema per
+    save_dir, not per episode), not something a per-reset schema rebuild could
+    work around. For every other task (fixed object count), this is just
+    `obj_names` from the first reset, unchanged from prior behavior."""
+    shelf_group_dr = task.dr.get_randomizer("shelf_group")
+    if shelf_group_dr is None:
+        return obj_names
+    max_count = shelf_group_dr.cfg.max_total_count()
+    return [f"target_{i}" for i in range(max_count)]
 
 
 def _build_frame(agent, obj_names: list[str], observation, privileged_info, action):
@@ -152,11 +226,16 @@ def _build_frame(agent, obj_names: list[str], observation, privileged_info, acti
         ),
     }
 
-    # Object poses: concatenate all object (pos + quat) in order
+    # Object poses: concatenate all object (pos + quat) in schema order.
+    # `obj_names` is the *fixed* per-session schema (see _object_poses_schema);
+    # objects absent this episode (stochastic per-reset count, e.g. shelf_group)
+    # are zero-padded rather than shifting/shrinking the feature shape.
     if obj_names:
-        obj_poses = []
-        for name in obj_names:
-            obj_poses.append(privileged_info[name])
+        zeros7 = np.zeros(7, dtype=np.float64)
+        obj_poses = [
+            np.asarray(privileged_info[name], dtype=np.float64) if name in privileged_info else zeros7
+            for name in obj_names
+        ]
         frame["observation.object_poses"] = np.concatenate(obj_poses).astype(np.float64)
 
     return frame
@@ -180,9 +259,38 @@ def main(
     num_episodes: Annotated[int, typer.Option()] = 100,
     shard_size: Annotated[int, typer.Option()] = 100,
     dr_level: Annotated[int, typer.Option()] = 0,
-    record: Annotated[bool, typer.Option()] = False
+    record: Annotated[bool, typer.Option()] = False,
+    operator: Annotated[str, typer.Option(envvar="SIMPLE_OPERATOR")] = os.getenv("USER", "unknown"),
+    industrial_material: Annotated[bool, typer.Option()] = False,
+    pick_hand: Annotated[str, typer.Option(help="left|right|both|random — pins the pick hand for tasks that support it (e.g. the mirror-table task); ignored elsewhere")] = "random",
+    target_side: Annotated[str, typer.Option(help="left|right|random — pins the delivery table side for tasks that support it; ignored elsewhere")] = "random",
+    unity: Annotated[bool, typer.Option()] = False,
+    unity_host: Annotated[str, typer.Option()] = "0.0.0.0",
+    unity_port: Annotated[int, typer.Option()] = 8765,
+    unity_export_dir: Annotated[str, typer.Option()] = "data/unity_scene",
+    unity_publish_hz: Annotated[float, typer.Option()] = 60.0,
+    unity_ice_host: Annotated[str, typer.Option()] = "",
+    unity_unordered: Annotated[bool, typer.Option()] = False,
+    unity_teleop: Annotated[bool, typer.Option()] = False,
+    unity_wrist_correction: Annotated[bool, typer.Option()] = True,
+    unity_grip_offset: Annotated[str, typer.Option()] = "",
 ):
     assert sim_mode in ["mujoco"], f"Invalid sim_mode {sim_mode} for teleop."
+    # Without --unity there is no channel to carry the operator's poses, so
+    # the agent would hold its rest pose forever with nothing to explain why.
+    assert not (unity_teleop and not unity), (
+        "--unity-teleop needs --unity: the tracker channel that carries the "
+        "operator's poses is opened by the Unity bridge."
+    )
+
+    # Where on the controller body the operator's wrist sits. Parsed here, with
+    # the other argument checks, so a typo fails before the environment is built
+    # rather than once the scene has loaded and the headset is already on.
+    from simple.teleop.unity.streamer import parse_grip_offset
+
+    grip_offset = parse_grip_offset(unity_grip_offset)
+    if any(grip_offset):
+        print(f"[unity] grip offset {grip_offset} m, in controller axes")
     sim_cnt = 0
 
     sonic_config = _load_sonic_config()
@@ -196,7 +304,11 @@ def main(
         headless=headless,
         max_episode_steps=max_episode_steps,
         sonic_config=sonic_config,
-        target=target
+        target=target,
+        dr_level=dr_level,
+        industrial_material=industrial_material,
+        pick_hand=pick_hand,
+        target_side=target_side,
     )
     sonic_env: SonicLocoManipEnv = env.unwrapped  # type: ignore
     task = sonic_env.task
@@ -204,7 +316,20 @@ def main(
     assert sonic_env.spec is not None
     assert isinstance(robot, G1Sonic)
 
-    agent = PicoDecoupledAgent(robot)
+    # The Unity client can act as the XR frontend for input as well as for
+    # rendering. The source is created first because both the agent (which
+    # reads from it) and the bridge (which feeds it) need the same one.
+    unity_source = None
+    if unity_teleop:
+        from simple.agents.unity_decoupled_agent import UnityDecoupledAgent
+        from simple.teleop.unity.streamer import UnityTrackerSource
+
+        unity_source = UnityTrackerSource(grip_offset=grip_offset)
+        agent = UnityDecoupledAgent(
+            robot, unity_source, wrist_correction=unity_wrist_correction
+        )
+    else:
+        agent = VuerDecoupledAgent(robot)
     agent.num_episodes = num_episodes
 
     # --- Recording setup ---
@@ -216,10 +341,33 @@ def main(
     control_dt = control_decimal * robot.sim_dt  # = 0.02 s (50 Hz)
 
     def _on_episode_reset():
-        """In recording mode, reset the WBC pipeline to a consistent initial pose,
-        skip elastic band drop, and engage the RL policy immediately."""
-        if not record:
-            return
+        """Put the robot in a usable state: on its feet, balancing, arms parked.
+
+        This used to run only under --record, which conflated two unrelated
+        things. Recording decides whether frames reach the disk. None of what
+        follows has anything to do with that: it releases the elastic band,
+        resets the WBC pipeline and engages the lower-body RL policy.
+
+        Without it the robot is half configured -- no balance policy, so it
+        collapses as soon as the viewer opens, then hangs from the band. The
+        teleop path then appears broken no matter which buttons the operator
+        presses, because get_action returns the band command and never reaches
+        the teleop one.
+
+        The `origin/industrial_env` branch reached the same conclusion
+        independently and generalized it the same way, which is reassuring
+        about the diagnosis.
+
+        The suspend-then-drop sequence below is left intact rather than
+        deleted: it is working code, and a future mode that wants a visible
+        landing animation will want it back. It simply has no business
+        deciding whether teleoperation works.
+
+        The teleop policy stays deactivated on purpose. The upper body holds
+        its default pose until the operator presses the activation button,
+        which is what stops the arms snapping to wherever the controllers
+        happen to be at connection time.
+        """
         if robot.elastic_band is not None:
             robot.elastic_band.enable = False
         agent._dropping = False
@@ -240,6 +388,19 @@ def main(
         print("[Record] Episode reset: elastic band skipped, policy reset to initial pose")
         print("[Record] Upper body tracking PAUSED — align arms then press activation button") """
 
+        # Per-episode goal HUD streamed to the headset. Only tasks that expose
+        # `required_counts` (quantities that vary per episode) show anything;
+        # every other task keeps the plain view.
+        counts = getattr(task, "required_counts", None)
+        agent.hud_lines = (
+            [
+                f"{counts['drivers']} Chaves",
+                f"{counts['screws']} Parafusos",
+            ]
+            if counts
+            else []
+        )
+
     # stabilized_printed = False
     step_pbar = None  # Progress bar for current recording episode
 
@@ -256,21 +417,74 @@ def main(
 
     # Read obj_names after first reset so layout is populated by domain randomization.
     obj_names = list(sonic_env.mujoco.mj_objects.keys())
+    # Fixed per-session schema for observation.object_poses (see _object_poses_schema):
+    # equal to obj_names for fixed-object-count tasks (unchanged prior behavior),
+    # but a padded upper-bound list for tasks with a stochastic per-reset object
+    # count (currently shelf_group), so every episode's frames share one shape.
+    obj_names_schema = _object_poses_schema(task, obj_names)
+
+    # Optional Unity frontend: renders the scene as real geometry in the headset
+    # instead of a video feed of Mujoco's render. It only reads state, so it is
+    # independent of the agent and of recording.
+    #
+    # Built after the first reset on purpose: update_layout() compiles mjModel,
+    # and reset() is what calls it.
+    unity_bridge = None
+    if unity:
+        from simple.teleop.unity.bridge import UnityRenderBridge
+
+        # Count what Unity sends on its own channel. Both channels open, but
+        # opening is DCEP control traffic -- it says nothing about whether data
+        # messages cross. If this stays at zero too, nothing is flowing in
+        # either direction and the state channel is not the thing at fault.
+        tracker_seen = {"n": 0}
+
+        def _on_tracker(message):
+            tracker_seen["n"] += 1
+            if unity_source is not None:
+                unity_source.feed(message)
+            if tracker_seen["n"] in (1, 50, 500):
+                size = len(message) if hasattr(message, "__len__") else "?"
+                print(f"[Unity] tracker: {tracker_seen['n']} mensagens recebidas "
+                      f"(ultima: {size} bytes)")
+
+        unity_bridge = UnityRenderBridge(
+            sonic_env.mujoco,
+            on_tracker=_on_tracker,
+            out_dir=unity_export_dir,
+            host=unity_host,
+            port=unity_port,
+            publish_hz=unity_publish_hz,
+            ice_host=unity_ice_host or None,
+            # Unity's WebRTC was not observed to deliver anything on an
+            # unordered channel; the flag is here to retest that.
+            channel_ordered=not unity_unordered,
+        )
+        print(
+            f"[Unity] cena exportada em {unity_export_dir} "
+            f"(scene_id 0x{unity_bridge.scene_id:08x}); "
+            f"aguardando cliente em ws://{unity_host}:{unity_port}"
+        )
 
     if record:
-        # timestamp = datetime.now().strftime("%m%d%H%M%S")
+        session_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         run_save_dir = (
-            f"{os.path.abspath(save_dir)}/{sonic_env.spec.id}/level-{dr_level}" #_{timestamp}
+            f"{os.path.abspath(save_dir)}/{sonic_env.spec.id}/level-{dr_level}"
+            f"/sessions/{session_ts}__{operator}"
         )
+        task_prompt = _prompt_task_instruction(task.instruction)
         exporter = _init_exporter(
             run_save_dir,
-            task.instruction, 
-            agent._dwbc_robot_model, 
-            obj_names,
-            robot.joint_names
+            task_prompt,
+            agent._dwbc_robot_model,
+            obj_names_schema,
+            robot.joint_names,
+            operator,
         )
+        _write_session_metadata(run_save_dir, operator, session_ts, sonic_env.spec.id, dr_level, sim_mode, task_prompt)
         print(f"\n[Record] Exporter initialized, saving to {run_save_dir}")
-        print(f"[Record] Recording {len(obj_names)} objects: {obj_names}")
+        print(f"[Record] observation.object_poses schema: {len(obj_names_schema)} slots ({obj_names_schema})")
+        print(f"[Record] First episode has {len(obj_names)} live objects: {obj_names}")
 
     try:
         while True:
@@ -293,10 +507,37 @@ def main(
             # if "proprio" in info:
             #     agent.publish_low_state(info["proprio"])
 
-            if agent.reset_requested:
+            # Live tote-location HUD -- ground-fall discard check scans every
+            # live tote (tote_location_counts), while the on-screen counts
+            # shown to the operator are restricted to the episode's target
+            # tote (target_tote_location_counts), if the task exposes it.
+            # No-op for tasks that expose neither.
+            tote_counts_fn = getattr(task, "tote_location_counts", None)
+            target_counts_fn = getattr(task, "target_tote_location_counts", tote_counts_fn)
+            tote_fell = False
+            if tote_counts_fn is not None:
+                tote_counts = tote_counts_fn(mujoco_env=sonic_env.mujoco)
+                tote_fell = tote_counts["ground"] > 0
+            if target_counts_fn is not None:
+                target_counts = target_counts_fn(mujoco_env=sonic_env.mujoco)
+                agent.hud_lines = [
+                    f"{target_counts['shelf']} TOTE AZUL NA ESTANTE",
+                    f"{target_counts['table']} TOTE AZUL NA MESA",
+                ]
+
+            # Tasks with a per-episode command the operator must follow (e.g. the
+            # mirror-table task: which hand, which side) provide their own HUD
+            # lines; this overrides the generic tote-count HUD above. No-op for
+            # tasks without it.
+            hud_fn = getattr(task, "teleop_hud_lines", None)
+            if hud_fn is not None:
+                agent.hud_lines = hud_fn(mujoco_env=sonic_env.mujoco)
+
+            if agent.reset_requested or tote_fell:
                 # Discard any in-progress recording
                 if exporter is not None and rec_state == RecordingState.RECORDING:
-                    print("[Record] Reset requested, discarding in-progress episode")
+                    reason = "tote fell on the ground" if tote_fell else "reset requested"
+                    print(f"[Record] Discarding in-progress episode ({reason})")
                     exporter.skip_and_start_new_episode()
                     # Close progress bar for discarded episode
                     if step_pbar is not None:
@@ -311,6 +552,10 @@ def main(
                 # stabilized_printed = False
                 rec_state = RecordingState.WAITING_FOR_LANDING
                 initial_target_z = None
+                if unity_bridge is not None:
+                    # A reset can compile a new scene; take the re-export here
+                    # rather than mid-episode.
+                    unity_bridge.resync()
                 print("[TeleopDecoupled] Environment reset complete")
 
             with telemetry.timer("update_viewer"):
@@ -322,6 +567,12 @@ def main(
 
             with telemetry.timer("update_render"):
                 agent.update_render_caches(observation)
+
+            if unity_bridge is not None:
+                with telemetry.timer("unity_publish"):
+                    # Throttles itself to --unity-publish-hz, so calling every
+                    # step costs a clock read when it is not due.
+                    unity_bridge.tick()
 
             """ # --- Print once when robot first stabilizes ---
             if robot.stabilized and not stabilized_printed:
@@ -356,7 +607,16 @@ def main(
                             print("[Record] Teleop active, starting episode recording")
 
                     if rec_state == RecordingState.RECORDING:
-                        frame = _build_frame(agent, obj_names, **data_frame)
+                        frame = _build_frame(agent, obj_names_schema, **data_frame)
+                        # Keep the recorded prompt in sync with the CURRENT episode.
+                        # Tasks whose instruction varies per episode (e.g. the
+                        # industrial sorting task's quantity DR) would otherwise be
+                        # saved under the prompt baked in at exporter init.
+                        # NOTE: set the exporter's fallback instead of putting
+                        # "task" in the frame — add_frame runs lerobot's
+                        # validate_frame first, which rejects any key that isn't a
+                        # declared feature ("Extra features: {'task'}").
+                        exporter.task = task.instruction
                         exporter.add_frame(frame)
                         if step_pbar is not None:
                             step_pbar.update(1)
@@ -400,6 +660,8 @@ def main(
                         # stabilized_printed = False
                         rec_state = RecordingState.WAITING_FOR_LANDING
                         initial_target_z = None
+                        if unity_bridge is not None:
+                            unity_bridge.resync()
                         continue  # skip sleep / increment for this iteration
 
             elapsed = time.monotonic() - step_start
@@ -432,8 +694,12 @@ def main(
         # Ensure progress bar is closed
         if step_pbar is not None:
             step_pbar.close()
+        if unity_bridge is not None:
+            print(f"[Unity] {unity_bridge.stats()}")
+            unity_bridge.close()
         if exporter is not None:
             exporter.stop_video_writers()
+            _finalize_session_metadata(run_save_dir, episodes_saved)
             print(f"[Record] Done. {episodes_saved} episodes saved to {run_save_dir}")
         env.close()
         agent.close()
@@ -445,3 +711,6 @@ def typer_main():
 
 if __name__ == "__main__":
     typer.run(main)
+
+
+# python src/simple/cli/teleop_decoupled_wbc.py simple/G1WholebodyLocomotionPickBetweenTablesTeleop-v0 --target=graspnet1b:0 --sim-mode=mujoco --record --no-headless

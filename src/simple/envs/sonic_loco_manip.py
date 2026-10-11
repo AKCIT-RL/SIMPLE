@@ -24,7 +24,7 @@ class SonicLocoManipEnv(BaseDualSim):
     def __init__(
         self, 
         task : str | Task, #
-        sonic_config: dict , 
+        sonic_config: dict | None = None, 
         # config: Dict[str, Any],
         sim_mode="mujoco_isaac",  # =SIM_MODE.MUJOCO_ISAAC
         headless=True, 
@@ -34,7 +34,7 @@ class SonicLocoManipEnv(BaseDualSim):
         **kwargs
     ) -> None:
         super().__init__(task, sim_mode, headless, sonic_config=sonic_config, *args, **kwargs)
-        self.sonic_config = sonic_config
+        self.sonic_config = sonic_config or {}
         
         self.offscreen = "isaac" in sim_mode or headless
         self.onscreen = not self.offscreen

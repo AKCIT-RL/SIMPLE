@@ -204,13 +204,24 @@ def main(
     record: Annotated[bool, typer.Option()] = True,
     save_dir: Annotated[str, typer.Option()] = "data/replay_decoupled_wbc",
     success_criteria: Annotated[float, typer.Option()] = 0.5,
-    resume: Annotated[bool, typer.Option()] = False
+    resume: Annotated[bool, typer.Option()] = False,
+    isaac_background_usd: Annotated[
+        str | None, typer.Option(help=(
+            "USD path/URL referenced as a purely visual Isaac Sim backdrop "
+            "(e.g. the SimReady Warehouse environment), for tasks that build "
+            "their own scenario geometry instead of layout.scene. Only takes "
+            "effect when --sim-mode includes isaac."
+        ))
+    ] = None,
 ):
     """Physics-based replay of recorded teleop through decoupled WBC pipeline with dataset recording.
 
     Args:
         resume: If True, resume from last interrupted replay without re-processing already saved episodes.
     """
+    if isaac_background_usd:
+        os.environ["SIMPLE_ISAAC_BACKGROUND_USD"] = isaac_background_usd
+
     import tyro
     from gear_sonic.utils.mujoco_sim.configs import SimLoopConfig
 

@@ -139,9 +139,11 @@ class SonicDecoupledWbcAgent(WholeBodyControlAgent):
         # arms move smoothly to the default rather than snapping.
         is_first_step = self._cached_target_q is None
         default_upper_body = self._dwbc_robot_model.get_initial_upper_body_pose()
+        stabilize_nav_cmd = np.asarray(DEFAULT_NAV_CMD, dtype=np.float64).copy()
+        stabilize_nav_cmd[3] = self._current_base_yaw()
         goal = {
             "target_upper_body_pose": default_upper_body,
-            "navigate_cmd": np.asarray(DEFAULT_NAV_CMD),
+            "navigate_cmd": stabilize_nav_cmd,
             "base_height_command": np.atleast_1d(np.asarray(DEFAULT_BASE_HEIGHT)),
             "target_time": t_now + (2.0 if is_first_step else 1 / control_freq),
             "interpolation_garbage_collection_time": t_now - 2 / control_freq,
@@ -160,6 +162,14 @@ class SonicDecoupledWbcAgent(WholeBodyControlAgent):
             left_hand_q=self._cached_left_hand_q,
             right_hand_q=self._cached_right_hand_q,
         )
+
+    def _current_base_yaw(self) -> float:
+        """Robot's current world-frame base yaw, read live from floating_base_pose."""
+        quat = self.robot.prepare_obs()["floating_base_pose"][3:7]  # (w, x, y, z)
+        return float(np.arctan2(
+            2.0 * (quat[0] * quat[3] + quat[1] * quat[2]),
+            1.0 - 2.0 * (quat[2] ** 2 + quat[3] ** 2),
+        ))
     
     def queue_action(self, action_cmd: ActionCmd):
         self._action_queue.append(action_cmd)

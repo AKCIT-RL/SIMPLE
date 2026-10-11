@@ -38,7 +38,8 @@ import simple
 import simple.scenes
 # from simple.core import sensors
 import simple.sensors
-from simple.core.actor import ObjectActor, VisualFrame, VisualGrasp, ArticulatedObjectActor
+from simple.scenes.warehouse import WarehouseSuite
+from simple.core.actor import ObjectActor, StaticObjectActor, VisualFrame, VisualGrasp, ArticulatedObjectActor
 from simple.core.robot import Robot
 from simple.core.simulator import Simulator
 from simple.core.task import Task
@@ -205,6 +206,47 @@ class IsaacSimSimulator(Simulator):
 
     SCENE_PRIM_PATH = "/World/scene"
 
+    # Purely-visual backdrop (e.g. SimReady Warehouse), see _setup_background.
+    # Fixed placeholder pose -- tune per backdrop asset by inspecting the
+    # first rendered frame; not derived from any task geometry since the
+    # backdrop has no collision/alignment requirement, only "looks right".
+    BACKGROUND_PRIM_PATH = "/World/background"
+    BACKGROUND_POSITION = (0.0, 0.0, 0.0)
+    BACKGROUND_ORIENTATION_WXYZ = (1.0, 0.0, 0.0, 0.0)
+    BACKGROUND_SCALE = (1.0, 1.0, 1.0)
+
+    # Base color for assets confirmed to carry zero material/texture data in
+    # their own USD (see __create_object) -- starting points, not calibrated
+    # against a real render (this file can't be tested locally), tune by
+    # inspecting the first rendered frame on a GPU machine.
+    _DEFAULT_MATERIAL_COLORS = {
+        "corridor0": (0.55, 0.55, 0.58),  # gray metal shelf
+        "toteweg": (0.45, 0.5, 0.42),  # neutral industrial tote (non-target)
+    }
+
+    # Isaac-only visual position correction, added on top of obj_info.pose in
+    # __update_object -- never touches the actual Pose object shared with
+    # MuJoCo (that pose is what both physics AND the SHELF_SPECS tote
+    # placements are calibrated against; shifting it would misalign the
+    # totes from the real shelf collision just to fix a rendering quirk).
+    # Empty as of the corridor0.usd regeneration (see
+    # third_party/usd2mjcf/eval/regenerate_corridor0_usd.py): the previous
+    # (-0.185, -0.219, 0.0) entry for "corridor0" compensated for
+    # corridor0.usd being stale -- it was still the pre-"Row swap" mesh
+    # (docs/teleop_simple_study/toteweg_factory_scene_migration_plan.md,
+    # section 7a) because that swap only rewrote the MJCF-side .obj files,
+    # never regenerated the .usd Isaac actually renders (confirmed by the
+    # stale corridor0.usd being byte-identical to corridor0_legacy/corridor0.usd
+    # via md5sum, and by AABB comparison showing the same ~0.185/0.219m
+    # offset this correction was papering over). corridor0.usd is now
+    # rebuilt directly from the same (post-swap) MJCF/visuals/corridor0.obj
+    # that MuJoCo's collision is built from, so their origins coincide by
+    # construction -- verified via AABB re-comparison (see the script above),
+    # not yet via an actual Isaac render (needs a GPU machine). If a future
+    # fixture asset needs a similar correction, add it back here with the
+    # same AABB-diagnosis approach, not a guessed offset.
+    _VISUAL_POSITION_CORRECTIONS: dict[str, tuple[float, float, float]] = {}
+
     def __init__(self, task:Task, render_hz: int=30, headless: bool=False) -> None:
         self._config_isaac()
         # self.render_hz = render_hz # @deprecated
@@ -274,23 +316,47 @@ class IsaacSimSimulator(Simulator):
         # 5. add objects
         self.__reset_objects()
         self.current_visible_objects = []
+        # Duplicate-label disambiguation, mirroring MujocoSimulator._setup_scene
+        # (self._dup_object_labels there): __create_object/__update_object used
+        # to key self.objects purely by asset.label, so every actor sharing the
+        # same asset (e.g. several "bin_b04" totes from shelf_group) collapsed
+        # onto a single Isaac prim -- each iteration below overwrote the same
+        # prim's pose, so only the last one processed ever ended up visible.
+        # Confirmed by real render: only one bin_b04 + the (always-unique)
+        # target toteweg were ever visible, never the other ~15 distractors.
+        from collections import Counter
+        label_counts = Counter()
+        for _obj_info in self.task.layout.actors.values():
+            if isinstance(_obj_info, (ObjectActor, StaticObjectActor)):
+                label_counts[_obj_info.asset.label] += 1
+        dup_labels = {lbl for lbl, count in label_counts.items() if count > 1}
+
         # object_shader_params = copy.deepcopy(self.task.layout.material_info["object_shader_params"])
         for obj_name, obj_info in self.task.layout.actors.items():
-            if not isinstance(obj_info, ObjectActor) and not isinstance(obj_info, ArticulatedObjectActor):
+            if not isinstance(obj_info, (ObjectActor, StaticObjectActor, ArticulatedObjectActor)):
                 continue
-            
-            if isinstance(obj_info, ArticulatedObjectActor):
-                self.add_articulated_object(obj_name, obj_info)
-                
-            else:
-                if obj_info.asset.label not in self.objects:
-                    self.__create_object(obj_name, obj_info)
 
-                self.__update_object(obj_name, obj_info)
+            if isinstance(obj_info, ArticulatedObjectActor):
+                # Zero-joint props (warehouse furniture) ride the articulated
+                # actor type so MuJoCo can attach their whole MJCF at a frame,
+                # but they are NOT articulations: render them as plain
+                # referenced prims instead of SingleArticulation.
+                if getattr(obj_info.asset, "static", False):
+                    self.add_static_prop(obj_name, obj_info)
+                else:
+                    self.add_articulated_object(obj_name, obj_info)
+
+            else:
+                label = obj_info.asset.label
+                object_key = f"{label}_{obj_name}" if label in dup_labels else label
+                if object_key not in self.objects:
+                    self.__create_object(object_key, obj_info)
+
+                self.__update_object(object_key, obj_info)
                 """ if obj_info["bTarget"]:
                     self.target_obj_id = obj_info["id"]
                     self.target_obj = self.objects[obj_name] """
-                self.current_visible_objects.append(self.objects[obj_info.asset.label]) # obj_name
+                self.current_visible_objects.append(self.objects[object_key])
 
         self.step_id = 0
         """ since isaac is already reset, we reset init robot qpos here 
@@ -305,6 +371,27 @@ class IsaacSimSimulator(Simulator):
                 joint_indices.append(self.robot.get_dof_index(isaac_jname))
                 qpos.append(jpos)
             self.robot.set_joint_positions(qpos, joint_indices=np.arange(len(joint_state)))
+
+        self.__warm_up_instanced_prims()
+
+    def __warm_up_instanced_prims(self) -> None:
+        """A few extra render passes right after objects are (re)populated.
+
+        Objects referenced through an `instanceable=true` prim (e.g. the
+        SimReady bin_b04 tote -- geometry lives in a separate prototype, not
+        under the instance's own prim path) aren't necessarily populated by
+        Hydra in time for the very first captured frame; the render log
+        shows `... has not been populated` for exactly this case, and the
+        object is invisible in the output. A prior version of this file had
+        an identical warm-up (see the commented-out block in
+        __update_object, tagged "BUG: extra render to avoid empty frame")
+        but scoped per-object per-frame; doing it once here, right after
+        update_layout() finishes (re)building the object set, is enough and
+        far cheaper.
+        """
+        for _ in range(3):
+            self.world.step(render=False)
+            rep.orchestrator.step(rt_subframes=1, pause_timeline=False)
 
     def _setup_scene(self, move_surface_to_origin=True):
         assert not self.is_scene_create
@@ -322,16 +409,68 @@ class IsaacSimSimulator(Simulator):
         self.cameras = {}
         self.lights = []
         self.articulated_objects = {}
+        # Zero-joint props (warehouse furniture): plain referenced prims, keyed
+        # by asset uid. See add_static_prop.
+        self.static_props = {}
+        # {object_prim_path: (uid, rgba)} for objects whose colour comes from the
+        # asset instead of its USD. Applied after world.reset() — see step().
+        self._pending_colors = {}
 
         self.add_robot()
         self.add_cameras()
         self.add_lights()
 
+        self._setup_background()
+
         self.__pre_add_objects()
         self.spheres = None
 
+    def _resolve_background_usd(self) -> str | None:
+        """USD to reference as a purely visual backdrop (e.g. the Isaac Sim
+        SimReady Warehouse environment) for tasks that build their own fixed
+        scenario geometry instead of using `layout.scene`/SceneManager (see
+        `__update_scene`). Never given collision -- physics for those tasks
+        runs entirely in MuJoCo (`sim_mode=mujoco_isaac`), so the backdrop is
+        just what the render sees behind/around the task's own fixtures.
+        Priority: task metadata > env var > none (no backdrop, current
+        behavior for every other task is unaffected).
+        """
+        from_metadata = self.task.metadata.get("isaac_background_usd")
+        if from_metadata:
+            return from_metadata
+        return os.environ.get("SIMPLE_ISAAC_BACKGROUND_USD") or None
+
+    def _setup_background(self) -> None:
+        bg_path = self._resolve_background_usd()
+        if not bg_path:
+            return
+
+        prim_path = f"{self.BACKGROUND_PRIM_PATH}"
+        isaacsim_stage.add_reference_to_stage(usd_path=bg_path, prim_path=prim_path)
+
+        bg_xform = XFormPrim(prim_path=prim_path)
+        bg_xform.set_local_pose(
+            list(self.BACKGROUND_POSITION), list(self.BACKGROUND_ORIENTATION_WXYZ)
+        )
+        bg_prim = self.world.stage.GetPrimAtPath(prim_path)
+        if bg_prim.GetAttribute("xformOp:scale"):
+            bg_prim.GetAttribute("xformOp:scale").Set(
+                Gf.Vec3d(*[float(s) for s in self.BACKGROUND_SCALE])
+            )
+
     def __update_scene(self, move_surface_to_origin=True):
-        scene_uid = self.task.layout.scene.uid
+        # Tasks that build their own fixed-geometry scenario (e.g. the tote
+        # shelf-to-table corridor) never populate `layout.scene` on purpose
+        # -- see the task's own dr_cfgs comment -- so there's no HSSD room to
+        # sync here. Still apply any Box primitives (table, table2, or any
+        # other, e.g. gray stand-in boxes) the task added directly, then
+        # bail before touching HSSD-only state.
+        scene = getattr(self.task.layout, "scene", None)
+        if scene is None:
+            self.__update_tables()
+            return
+
+        scene_uid = scene.uid
 
         for uid, (_scene,_) in self.scenes.items():
             if scene_uid != uid:
@@ -339,96 +478,151 @@ class IsaacSimSimulator(Simulator):
                 # scene.GetAttribute("xformOp:translate").Set((0, 0, 0))
 
         scene = self.task.layout.scene
-        assert isinstance(scene, HssdSuite), "not supported scene type yet"
-
         scene_prim_path = f"{self.SCENE_PRIM_PATH}/s_{scene.uid.replace(':', '_')}"
-        surface_prim_path = scene.conf["surface"]["prim_path"].replace("/World", scene_prim_path)
-        
-        has_surface2 = "surface2" in scene.conf and scene.conf["surface2"] is not None
-        surface2_prim_path = None
-        if has_surface2:
-            surface2_prim_path = scene.conf["surface2"]["prim_path"].replace("/World", scene_prim_path)
 
-        if scene_uid not in self.scenes:
-            # self.add_scene(move_surface_to_origin)
-            if isinstance(scene, simple.scenes.ShowHouse):
-                raise NotImplementedError("ShowHouse scene is not implemented yet.")
+        if isinstance(scene, WarehouseSuite):
+            if scene_uid not in self.scenes:
+                from omni.isaac.core.utils.nucleus import get_assets_root_path
+                assets_root_path = get_assets_root_path()
+                if assets_root_path is None:
+                    env_url = scene.data_dir
+                else:
+                    env_url = assets_root_path + "/Isaac/Environments/Simple_Warehouse/warehouse.usd"
+                
+                try:
+                    isaacsim_stage.add_reference_to_stage(usd_path=env_url, prim_path=scene_prim_path)
+                except Exception as e:
+                    print(f"Warning: could not load warehouse usd: {e}")
+                
+                scene_prim = self.world.stage.GetPrimAtPath(scene_prim_path)
+                self.scenes[scene.uid] = [scene_prim, {"position": np.array([0, 0, 0])}]
+            else:
+                scene_prim = self.scenes[scene.uid][0]
+
+            scene_prim.GetAttribute("visibility").Set("visible")
             
-            #### START adding HSSD scenes ####
-            from pxr import UsdGeom, UsdPhysics
-
-            # data_dir = resolve_data_path
-            try:
-                data_dir = resolve_data_path(scene.data_dir, auto_download=True) #f"scenes/hssd/{scene_name}" 
-            except FileNotFoundError:
-                # put download logic into SceneManager
-                from simple.scenes import SceneManager
-                SceneManager.get(scene.uid.split(":")[0]).load(scene.uid)
-                data_dir = resolve_data_path(scene.data_dir)
-
-            env_url = os.path.abspath(f"{data_dir}/{scene.name}.usd")
-            isaacsim_stage.add_reference_to_stage(usd_path=env_url, prim_path=scene_prim_path)
-            scene_prim = self.world.stage.GetPrimAtPath(scene_prim_path)
-
-            surface_prim = self.world.stage.GetPrimAtPath(surface_prim_path)
-            surface_prim.GetAttribute("visibility").Set("invisible")
-
-            if has_surface2:
-                surface2_prim = self.world.stage.GetPrimAtPath(surface2_prim_path)
-                surface2_prim.GetAttribute("visibility").Set("invisible")
-
-            if not scene_prim.GetAttribute("xformOp:translate"):
-                UsdGeom.Xformable(scene_prim).AddTranslateOp() # type: ignore
-            if not scene_prim.GetAttribute("xformOp:rotateXYZ"):
-                UsdGeom.Xformable(scene_prim).AddRotateXYZOp() # type: ignore
-            if not scene_prim.GetAttribute("xformOp:scale"):
-                UsdGeom.Xformable(scene_prim).AddScaleOp() # type: ignore
-
-            # scene: HssdSuite = self.task.layout.scene
-            scene_prim.GetAttribute("xformOp:rotateXYZ").Set(tuple(scene.center_orientation))
-
-            scale = scene.conf["scale"]
-            scene_prim.GetAttribute("xformOp:scale").Set((scale, scale, scale))
-
-            surface_obb = self.calc_surface_center(surface_prim)
-            self.scenes[scene.uid] = [scene_prim, surface_obb] # hssd_env # store it
         else:
-            scene_prim = self.world.stage.GetPrimAtPath(scene_prim_path)
-            surface_prim = self.world.stage.GetPrimAtPath(surface_prim_path)
-            surface_prim.GetAttribute("visibility").Set("invisible")
-            self.scenes[scene.uid][0] = scene_prim # hssd_env # store it
-            surface_obb = self.scenes[scene.uid][1]
+            assert isinstance(scene, HssdSuite), "not supported scene type yet"
 
-            scale = scene.conf["scale"]
-            scene_prim.GetAttribute("xformOp:scale").Set((scale, scale, scale))
-            scene_prim.GetAttribute("xformOp:translate").Set((0,0,0))
-            scene_prim.GetAttribute("xformOp:rotateXYZ").Set(tuple(scene.center_orientation))
-            surface_obb = self.calc_surface_center(surface_prim)
-
+            surface_prim_path = scene.conf["surface"]["prim_path"].replace("/World", scene_prim_path)
+            
+            has_surface2 = "surface2" in scene.conf and scene.conf["surface2"] is not None
+            surface2_prim_path = None
             if has_surface2:
-                surface2_prim = self.world.stage.GetPrimAtPath(surface2_prim_path)
-                surface2_prim.GetAttribute("visibility").Set("invisible")
+                surface2_prim_path = scene.conf["surface2"]["prim_path"].replace("/World", scene_prim_path)
 
-        ceiling = scene_prim.GetPrimAtPath(f"{scene_prim_path}/ceilings")
-        ceiling.GetAttribute("visibility").Set("visible") # hide ceiling for better visualization
+            if scene_uid not in self.scenes:
+                # self.add_scene(move_surface_to_origin)
+                if isinstance(scene, simple.scenes.ShowHouse):
+                    raise NotImplementedError("ShowHouse scene is not implemented yet.")
+                
+                #### START adding HSSD scenes ####
+                from pxr import UsdGeom, UsdPhysics
 
-        if move_surface_to_origin:
-            surface_center_position = - surface_obb["position"] + \
-                np.array(scene.center_offset, dtype=np.float32) #self._config.hssd.center_offset
-            if self.task.robot.uid == "g1_sonic":
-                # FIXME backward compatibility: robot touches the ground
-                surface_center_position[2] = 0.0 
-            scene_prim.GetAttribute("xformOp:translate").Set(tuple(surface_center_position))
+                # data_dir = resolve_data_path
+                try:
+                    data_dir = resolve_data_path(scene.data_dir, auto_download=True) #f"scenes/hssd/{scene_name}" 
+                except FileNotFoundError:
+                    # put download logic into SceneManager
+                    from simple.scenes import SceneManager
+                    SceneManager.get(scene.uid.split(":")[0]).load(scene.uid)
+                    data_dir = resolve_data_path(scene.data_dir)
 
-        scene_prim.GetAttribute("visibility").Set("visible")
+                env_url = os.path.abspath(f"{data_dir}/{scene.name}.usd")
+                isaacsim_stage.add_reference_to_stage(usd_path=env_url, prim_path=scene_prim_path)
+                scene_prim = self.world.stage.GetPrimAtPath(scene_prim_path)
 
-        table_box = self.task.layout.actors.get("table")
-        if table_box is not None:
-            self._setup_table(f"{self.workspace_prim_path}/table_cuboid", table_box)
+                surface_prim = self.world.stage.GetPrimAtPath(surface_prim_path)
+                surface_prim.GetAttribute("visibility").Set("invisible")
 
-        table2_box = self.task.layout.actors.get("table2")
-        if table2_box is not None:
-            self._setup_table(f"{self.workspace_prim_path}/table2_cuboid", table2_box)
+                if has_surface2:
+                    surface2_prim = self.world.stage.GetPrimAtPath(surface2_prim_path)
+                    surface2_prim.GetAttribute("visibility").Set("invisible")
+
+                if not scene_prim.GetAttribute("xformOp:translate"):
+                    UsdGeom.Xformable(scene_prim).AddTranslateOp() # type: ignore
+                if not scene_prim.GetAttribute("xformOp:rotateXYZ"):
+                    UsdGeom.Xformable(scene_prim).AddRotateXYZOp() # type: ignore
+                if not scene_prim.GetAttribute("xformOp:scale"):
+                    UsdGeom.Xformable(scene_prim).AddScaleOp() # type: ignore
+
+                # scene: HssdSuite = self.task.layout.scene
+                scene_prim.GetAttribute("xformOp:rotateXYZ").Set(tuple(scene.center_orientation))
+
+                scale = scene.conf["scale"]
+                scene_prim.GetAttribute("xformOp:scale").Set((scale, scale, scale))
+
+                surface_obb = self.calc_surface_center(surface_prim)
+                self.scenes[scene.uid] = [scene_prim, surface_obb] # hssd_env # store it
+            else:
+                scene_prim = self.world.stage.GetPrimAtPath(scene_prim_path)
+                surface_prim = self.world.stage.GetPrimAtPath(surface_prim_path)
+                surface_prim.GetAttribute("visibility").Set("invisible")
+                self.scenes[scene.uid][0] = scene_prim # hssd_env # store it
+                surface_obb = self.scenes[scene.uid][1]
+
+                scale = scene.conf["scale"]
+                scene_prim.GetAttribute("xformOp:scale").Set((scale, scale, scale))
+                scene_prim.GetAttribute("xformOp:translate").Set((0,0,0))
+                scene_prim.GetAttribute("xformOp:rotateXYZ").Set(tuple(scene.center_orientation))
+                surface_obb = self.calc_surface_center(surface_prim)
+
+                if has_surface2:
+                    surface2_prim = self.world.stage.GetPrimAtPath(surface2_prim_path)
+                    surface2_prim.GetAttribute("visibility").Set("invisible")
+
+            try:
+                ceiling = scene_prim.GetPrimAtPath(f"{scene_prim_path}/ceilings")
+                if ceiling:
+                    ceiling.GetAttribute("visibility").Set("visible") # hide ceiling for better visualization
+            except Exception as e:
+                print(f"Warning: could not set ceiling visibility for {scene_prim_path}: {e}")
+
+            if move_surface_to_origin:
+                surface_center_position = - surface_obb["position"] + \
+                    np.array(scene.center_offset, dtype=np.float32) #self._config.hssd.center_offset
+                if self.task.robot.uid == "g1_sonic":
+                    # FIXME backward compatibility: robot touches the ground
+                    surface_center_position[2] = 0.0 
+                scene_prim.GetAttribute("xformOp:translate").Set(tuple(surface_center_position))
+
+            scene_prim.GetAttribute("visibility").Set("visible")
+
+        # If static furniture props exist (e.g. TableTrolley bench), the primitive
+        # table cuboid is redundant in Isaac Sim rendering. Skip table_cuboid if
+        # static furniture is present or if table_box is marked invisible.
+        has_static_furniture = bool(self.static_props) or any(
+            k.startswith("furniture_") or getattr(getattr(v, "asset", None), "static", False)
+            for k, v in self.task.layout.actors.items()
+        )
+
+        self.__update_tables(has_static_furniture)
+
+    def __update_tables(self, has_static_furniture: bool = False) -> None:
+        # Generic over any Box primitive actor (table, table2, or any other
+        # name a task adds via layout.add_primitive, e.g. plain gray stand-in
+        # boxes) -- not just the two hardcoded table names, so a task can add
+        # as many box primitives as it needs without touching this engine.
+        #
+        # Two guards, both from the industrial sorting path: a box marked
+        # `invisible` must never render, and a "table" box is redundant when
+        # static furniture (e.g. a TableTrolley bench) already provides the
+        # surface in Isaac -- in either case remove any prim previously created
+        # for it instead of setting it up.
+        from simple.assets.primitive import Box
+        stage = omni.usd.get_context().get_stage()
+        for name, actor in self.task.layout.actors.items():
+            if not isinstance(actor, Box):
+                continue
+            prim_path = f"{self.workspace_prim_path}/{name}_cuboid"
+            skip = getattr(actor, "invisible", False) or (
+                name == "table" and has_static_furniture
+            )
+            if skip:
+                if stage.GetPrimAtPath(prim_path).IsValid():
+                    stage.RemovePrim(prim_path)
+            else:
+                self._setup_table(prim_path, actor)
 
     def __update_cameras(self):
         for cname, cameraEntity in self.task.layout.cameras.items():
@@ -484,9 +678,70 @@ class IsaacSimSimulator(Simulator):
         for obj in self.task.preload_objects():
             self.__create_object(obj.asset.label, obj)
 
+    def _bind_color_material(self, object_prim_path: str, uid: str, rgba) -> None:
+        """Give an object a solid-colour material in Isaac, from `asset.rgba`.
+
+        Used by assets whose colour isn't in their USD — the tote variants
+        (bin_b04_red/blue) reuse one SimReady bin, so red/blue has to be applied
+        here.
+
+        Overriding the asset's OWN material does NOT work: editing the bound
+        shader's `diffuse_texture`/`diffuse_color_constant`/`diffuse_tint` (even
+        after de-instancing, with the values verified on the live stage) leaves
+        the render untouched. What does work — and is the pattern this engine
+        already uses for the table — is creating a fresh OmniPBR material and
+        binding it over the mesh with `strongerThanDescendants`.
+        """
+        created: list[str] = []
+        omni.kit.commands.execute(
+            "CreateAndBindMdlMaterialFromLibrary",
+            mdl_name="OmniPBR.mdl",
+            mtl_name="OmniPBR",
+            mtl_created_list=created,
+        )
+        if not created:
+            print(f"Warning: could not create colour material for {uid}")
+            return
+
+        stage = omni.usd.get_context().get_stage()
+        mat_prim = stage.GetPrimAtPath(created[0])
+        for child in mat_prim.GetChildren():
+            if child.IsA(UsdShade.Shader):
+                shader = UsdShade.Shader(child)
+                shader.CreateInput("diffuse_color_constant", Sdf.ValueTypeNames.Color3f).Set(
+                    Gf.Vec3f(float(rgba[0]), float(rgba[1]), float(rgba[2]))
+                )
+                shader.CreateInput("reflection_roughness_constant", Sdf.ValueTypeNames.Float).Set(0.4)
+
+        material = UsdShade.Material(mat_prim)
+        root = stage.GetPrimAtPath(object_prim_path)
+
+        # De-instance FIRST. The SimReady bin is an instanceable prim, and USD
+        # forbids authoring on instance proxies — binding straight onto one
+        # segfaults the process. Turning instancing off composes real prims we
+        # can bind (and gives each object its own material).
+        for prim in Usd.PrimRange(root, Usd.TraverseInstanceProxies()):
+            if prim.IsInstanceable():
+                prim.SetInstanceable(False)
+
+        bound = 0
+        for prim in Usd.PrimRange(root):
+            if prim.GetTypeName() == "Mesh":
+                UsdShade.MaterialBindingAPI.Apply(prim).Bind(
+                    material, UsdShade.Tokens.strongerThanDescendants
+                )
+                bound += 1
+        if bound == 0:
+            print(f"Warning: no mesh to colour under {object_prim_path}")
+
     def __create_object(self, obj_key: str, object_info: ObjectActor):
         obj_id = object_info.uid # object_info["id"]
-        object_prim_path = f'{self.workspace_prim_path}/{object_info.asset.label}' # {object_info["name"]}
+        # obj_key is the disambiguated key computed in update_layout (bare
+        # asset label, unless several actors share it -- see dup_labels
+        # there); using it here instead of the bare label is what gives each
+        # instance of a repeated asset (e.g. multiple "bin_b04" totes) its
+        # own Isaac prim instead of all of them collapsing onto one.
+        object_prim_path = f'{self.workspace_prim_path}/{obj_key}'
 
         # if obj_id == 100:
         #     cube = self.__create_cuboid(object_prim_path, 
@@ -503,13 +758,35 @@ class IsaacSimSimulator(Simulator):
         
         isaacsim_stage.add_reference_to_stage(usd_path=object_usd_path, prim_path=object_prim_path)
 
+        # Per-asset colour (e.g. the red/blue tote variants, which share one USD).
+        # DEFERRED: binding here has no effect — the material must be created
+        # after world.reset() (see step()), otherwise the render ignores it.
+        rgba = getattr(object_info.asset, "rgba", None)
+        if rgba is not None:
+            self._pending_colors[object_prim_path] = (obj_id, rgba)
+
         obj_xform = XFormPrim(prim_path=object_prim_path)
+        # Only toteweg-style assets (authored/converted through our own
+        # usd2mjcf pipeline) bake a physics schema onto a `Meshes` child that
+        # needs explicitly disabling here (Isaac never owns physics in this
+        # pipeline -- MuJoCo does, see sim_mode=mujoco_isaac). Raw SimReady
+        # assets like bin_b04 have no `Meshes` prim at all (their geometry
+        # sits behind an `instanceable` reference, invisible to a plain
+        # GetPrimAtPath) and default their PhysicsVariant to "None" -- i.e.
+        # nothing to disable. Guard on existence instead of assuming the
+        # path, confirmed by dumping bin_b04's USD layers directly (see
+        # docs/source/tutorials/isaac_warehouse_rendering.md).
         geom_prim_path = f'{object_prim_path}/Meshes'
-        obj_geom = GeometryPrim(prim_path=geom_prim_path)
-        obj_rigid = RigidPrim(prim_path=geom_prim_path)
-        obj_rigid.disable_rigid_body_physics()
-        obj_collision_geom = GeometryPrim(f"{geom_prim_path}/collision")
-        obj_collision_geom.set_collision_enabled(False)
+        stage = omni.usd.get_context().get_stage()
+        if stage.GetPrimAtPath(geom_prim_path).IsValid():
+            try:
+                obj_geom = GeometryPrim(prim_path=geom_prim_path)
+                obj_rigid = RigidPrim(prim_path=geom_prim_path)
+                obj_rigid.disable_rigid_body_physics()
+                obj_collision_geom = GeometryPrim(f"{geom_prim_path}/collision")
+                obj_collision_geom.set_collision_enabled(False)
+            except Exception as e:
+                print(f"Warning: skipped processing {geom_prim_path} for {obj_id} due to: {e}")
 
         usd_prim = isaacsim_prims.get_prim_at_path(object_prim_path)
         semantics=[("prim", f"{obj_id}")]
@@ -520,7 +797,20 @@ class IsaacSimSimulator(Simulator):
             sem.CreateSemanticDataAttr()
             sem.GetSemanticTypeAttr().Set(semantic_type)
             sem.GetSemanticDataAttr().Set(semantic_value)
-    
+
+        # corridor0/toteweg carry zero material/texture data in their source
+        # USD (confirmed by inspecting the raw files directly -- no Looks,
+        # Shader, .mdl, or displayColor anywhere), so Kit falls back to an
+        # arbitrary flat preview color. Give them a plausible base color
+        # instead. Only for assets confirmed to have no material of their
+        # own -- doesn't touch bin_b04 (has real Looks/MDL/textures) or any
+        # future asset that already carries material.
+        default_color = self._DEFAULT_MATERIAL_COLORS.get(object_info.asset.label)
+        if default_color is not None and not isaacsim_prims.find_matching_prim_paths(
+            f'{object_prim_path}/Looks/material_*'
+        ):
+            self._bind_solid_color(stage, object_prim_path, f"{object_prim_path}/Looks/DefaultMaterial", default_color)
+
         obj = {
             "id": obj_id,
             "object_prim_path": object_prim_path,
@@ -528,12 +818,47 @@ class IsaacSimSimulator(Simulator):
             "bTarget": obj_key == "target" #object_info["bTarget"],
         }
 
-        self.objects[object_info.asset.label] = obj
+        self.objects[obj_key] = obj
 
-    def __update_object(self, obj_name, obj_info: ObjectActor):
-        obj = self.objects[obj_info.asset.label] # obj_info["name"]
+    def _bind_solid_color(self, stage, target_prim_path: str, material_prim_path: str, rgb) -> None:
+        """Binds a flat-color UsdPreviewSurface material to `target_prim_path`
+        (and, via USD's inherited material-binding resolution, its whole
+        descendant geometry -- no need to know the exact mesh sub-prim name).
+        Plain UsdShade/UsdPreviewSurface instead of an MDL asset (e.g.
+        OmniPBR) since it needs no external .mdl file and its shader input
+        names are stable core-USD, not Kit-version-dependent."""
+        material = UsdShade.Material.Define(stage, material_prim_path)
+        shader = UsdShade.Shader.Define(stage, f"{material_prim_path}/Shader")
+        shader.CreateIdAttr("UsdPreviewSurface")
+        shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(
+            Gf.Vec3f(*[float(c) for c in rgb])
+        )
+        shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.6)
+        shader.CreateOutput("surface", Sdf.ValueTypeNames.Token)
+        material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
+        target_prim = stage.GetPrimAtPath(target_prim_path)
+        UsdShade.MaterialBindingAPI.Apply(target_prim).Bind(material)
+
+    def __update_object(self, obj_key, obj_info: ObjectActor):
+        obj = self.objects[obj_key]
         # obj_geom = GeometryPrim(prim_path=obj["object_prim_path"])
         # obj_geom.set_visibility(True)
+
+        # Target-tote highlight (blue), ported from MuJoCo -- ObjectActor.rgba
+        # is set by the task only for the one tote the robot must deliver
+        # this episode (see _TARGET_TOTE_RGBA), but until now was read only
+        # by MujocoSimulator._build_object; Isaac never applied it, so there
+        # was no way to tell which tote is the target from an Isaac render.
+        # Overrides whatever base color __create_object bound (or the
+        # asset's own material, for bin_b04-like assets).
+        rgba = getattr(obj_info, "rgba", None)
+        if rgba is not None:
+            stage = omni.usd.get_context().get_stage()
+            self._bind_solid_color(
+                stage, obj["object_prim_path"],
+                f'{obj["object_prim_path"]}/Looks/TargetHighlightMaterial',
+                rgba[:3],
+            )
 
         # # enable physics for now
         # geom_prim_path = f'{obj["object_prim_path"]}/Meshes'
@@ -553,7 +878,11 @@ class IsaacSimSimulator(Simulator):
 
         # change object pose
         obj_xform = XFormPrim(prim_path=obj["object_prim_path"])
-        obj_xform.set_local_pose(obj_info.pose.position, obj_info.pose.quaternion)
+        position = obj_info.pose.position
+        correction = self._VISUAL_POSITION_CORRECTIONS.get(obj_info.asset.label)
+        if correction is not None:
+            position = [p + c for p, c in zip(position, correction)]
+        obj_xform.set_local_pose(position, obj_info.pose.quaternion)
         obj_xform.set_visibility(True)
         # geom_prim_path = f'{obj["object_prim_path"]}/Meshes'
         # obj_geom = GeometryPrim(prim_path=geom_prim_path)
@@ -568,15 +897,21 @@ class IsaacSimSimulator(Simulator):
 
         # object_prim_path = obj["xform"].prim_path
         # object_shader_param = object_shader_params.pop()
-        for shader_path in isaacsim_prims.find_matching_prim_paths(f'{obj["object_prim_path"]}/Looks/material_*/material_*'):
-            shader = UsdShade.Shader(isaacsim_prims.get_prim_at_path(shader_path))
-            # shader.SetSourceAsset('OmniPBR.mdl')
-            for key in ['reflection_roughness_constant', 'metallic_constant', 'specular_level']:
-                shader.CreateInput(key, Sdf.ValueTypeNames.Float).Set(obj_info.material[key]) # type:ignore object_shader_param[key]
+        # StaticObjectActor (e.g. corridor0) only sets `.material` via
+        # set_material(), never in __init__ -- skip shader override when the
+        # task never called it (getattr, not obj_info.material directly).
+        material_info = getattr(obj_info, "material", None)
+        if material_info is not None:
+            for shader_path in isaacsim_prims.find_matching_prim_paths(f'{obj["object_prim_path"]}/Looks/material_*/material_*'):
+                shader = UsdShade.Shader(isaacsim_prims.get_prim_at_path(shader_path))
+                # shader.SetSourceAsset('OmniPBR.mdl')
+                for key in ['reflection_roughness_constant', 'metallic_constant', 'specular_level']:
+                    shader.CreateInput(key, Sdf.ValueTypeNames.Float).Set(material_info[key]) # type:ignore object_shader_param[key]
 
     def step(self, mujoco_env = None):
         if not self.is_isaac_reset:
             self.world.reset()
+
             # self.__update_object()
             self.robot.initialize()
 
@@ -650,6 +985,16 @@ class IsaacSimSimulator(Simulator):
 
             # Stop all motion
             self.robot._articulation_view.set_joint_velocities(zeros)
+
+            # Asset-driven object colours (see _bind_color_material). Applied at
+            # the END of the reset, on a fully initialised stage: binding during
+            # scene construction — or even right after world.reset() — leaves the
+            # render untouched. Verified by rendering each variant.
+            if self._pending_colors:
+                for prim_path, (uid, rgba) in self._pending_colors.items():
+                    self._bind_color_material(prim_path, uid, rgba)
+                self._pending_colors = {}
+
             self.is_isaac_reset = True
             self._update_collision_spheres()
 
@@ -777,6 +1122,54 @@ class IsaacSimSimulator(Simulator):
     def set_states(self, states: Dict[str, float]) -> None:
         raise NotImplementedError
     
+    def add_static_prop(self, obj_name: str, obj_info):
+        """Render a zero-joint prop (warehouse furniture) as a plain USD reference.
+
+        Unlike `add_articulated_object`, this gives each prop its OWN prim path
+        (so several can coexist) and positions it with an XForm instead of a
+        SingleArticulation — these assets have no articulation for Isaac to bind,
+        and their USD root prim is not named after the object. Purely visual:
+        physics for these lives in MuJoCo, so collisions are left disabled and
+        the prop is never stepped.
+        """
+        uid = obj_info.asset.uid
+        prim_path = f"{self.workspace_prim_path}/static_props/{uid}"
+
+        if uid not in self.static_props:
+            # Remote URLs (http/https/omniverse) are referenced as-is: resolving
+            # them as data paths would mangle them, and referencing the asset at
+            # its original location is what lets its MDL materials — declared
+            # relative to that location — resolve, keeping the authored textures.
+            # Local paths follow __create_object: ABSOLUTE (+ auto_download), since
+            # a relative one makes add_reference_to_stage load nothing and the
+            # wrap below then fails with "prim matching the expression needs to
+            # created before wrapping it as view".
+            raw_usd = obj_info.asset.usd_path
+            if str(raw_usd).startswith(("http://", "https://", "omniverse://")):
+                usd_path = str(raw_usd)
+            else:
+                usd_path = os.path.abspath(
+                    resolve_data_path(raw_usd, auto_download=True)
+                )
+            isaacsim_stage.add_reference_to_stage(usd_path=usd_path, prim_path=prim_path)
+            self.static_props[uid] = XFormPrim(prim_path=prim_path)
+
+        # (Re)apply pose AND scale every reset — the layout can move furniture
+        # between episodes even though it never moves within one.
+        prop = self.static_props[uid]
+        prop.set_world_pose(
+            np.asarray(obj_info.pose.position, dtype=np.float32),
+            np.asarray(obj_info.pose.quaternion, dtype=np.float32),
+        )
+        # add_reference_to_stage does NOT convert units, so a centimetre-authored
+        # asset (metersPerUnit=0.01) lands 100x too large in a metres stage —
+        # e.g. the trolley at 224 m long, swallowing the camera. This is the same
+        # correction Omniverse's metrics assembler writes as `unitsResolve`.
+        scale = float(getattr(obj_info.asset, "usd_scale", 1.0))
+        if scale != 1.0:
+            prop.set_local_scale(np.array([scale] * 3, dtype=np.float32))
+        prop.set_visibility(True)
+
     def add_articulated_object(self, obj_name: str, obj_info: ObjectActor):
         obj_name = obj_info.asset.name
         uid = obj_info.asset.uid
@@ -988,12 +1381,36 @@ class IsaacSimSimulator(Simulator):
         UsdPhysics.MeshCollisionAPI.Apply(prim)
 
         mat_info = getattr(table_box, 'material', None)
-        if mat_info is None:
-            return
-        raw_path = mat_info['path']
-        if not os.path.isabs(raw_path):
-            raw_path = resolve_data_path(raw_path.removeprefix("data/"), auto_download=True)
         created = [None]
-        create_mdl_material(stage, raw_path, mat_info['name'], lambda p: created.__setitem__(0, p))
+        if mat_info is not None:
+            raw_path = mat_info['path']
+            if not os.path.isabs(raw_path):
+                raw_path = resolve_data_path(raw_path.removeprefix("data/"), auto_download=True)
+            try:
+                create_mdl_material(stage, raw_path, mat_info['name'], lambda p: created.__setitem__(0, p))
+            except Exception as e:
+                print(f"Warning: failed to load material {raw_path}: {e}")
+        
+        if created[0] is None:
+            # Last-resort fallback so the table never renders as an opaque white
+            # cube when no material was resolved (missing/failed MDL, no DR material
+            # assigned, etc). This applies to any scene type, not just warehouse -
+            # scene/task-specific looks should be set via MaterialDRCfg instead.
+            mtl_created_list = []
+            omni.kit.commands.execute("CreateAndBindMdlMaterialFromLibrary",
+                mdl_name="OmniPBR.mdl", mtl_name="OmniPBR", mtl_created_list=mtl_created_list)
+            if mtl_created_list:
+                mtl_path = mtl_created_list[0]
+                mtl_prim = stage.GetPrimAtPath(mtl_path)
+                created[0] = mtl_prim
+                mtl = UsdShade.Material(mtl_prim)
+                for child in mtl_prim.GetChildren():
+                    if child.IsA(UsdShade.Shader):
+                        shader = UsdShade.Shader(child)
+                        shader.CreateInput("diffuse_color_constant", Sdf.ValueTypeNames.Color3f).Set((0.5, 0.5, 0.5))
+                        shader.CreateInput("metallic_constant", Sdf.ValueTypeNames.Float).Set(0.0)
+                        shader.CreateInput("reflection_roughness_constant", Sdf.ValueTypeNames.Float).Set(0.5)
+                        break
+
         if created[0] is not None:
             UsdShade.MaterialBindingAPI.Apply(prim).Bind(UsdShade.Material(created[0]))

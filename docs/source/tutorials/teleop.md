@@ -6,6 +6,93 @@ VR teleoperation in SIMPLE. Built upon modifications to the [GR00T decoupled  WB
 
 Please ensure that the main SIMPLE environment is successfully installed before proceeding. For detailed environment setup, please refer to the **SIMPLE installation**.
 
+## 🔐 SSL Certificates (televuer)
+
+Teleoperation streams video to the headset over **WebXR, which requires HTTPS**,
+so televuer needs an SSL certificate/key pair (`cert.pem` / `key.pem`) to serve
+the Vuer page. These files are **not shipped** (they are git-ignored), so a fresh
+checkout — or a fresh Docker container — has none. Without them, teleop fails at
+startup with a missing-file error and, downstream, a `Non-positive determinant`
+crash (the headset can never connect, so no head pose ever reaches the sim).
+
+### Where televuer looks (resolution order)
+
+On startup `TeleVuer` picks the cert/key from the **first source that exists**:
+
+1. Explicit `cert_file` / `key_file` arguments.
+2. Environment variables `XR_TELEOP_CERT` and `XR_TELEOP_KEY` (both must be set).
+3. `~/.config/xr_teleoperate/cert.pem` **and** `~/.config/xr_teleoperate/key.pem`.
+4. Fallback: `third_party/televuer/cert.pem` / `key.pem` (git-ignored, usually absent).
+
+Source **3** is the recommended spot. Both files must be present for a source to
+count — a lone `cert.pem` silently falls through to the (empty) fallback and you
+get the missing-file error.
+
+### Generate the certificate
+
+Self-signed is fine (the headset just has to trust it once). Generate it into the
+location televuer checks:
+
+```bash
+mkdir -p ~/.config/xr_teleoperate
+openssl req -x509 -newkey rsa:2048 -nodes \
+  -keyout ~/.config/xr_teleoperate/key.pem \
+  -out   ~/.config/xr_teleoperate/cert.pem \
+  -days 3650 -subj "/CN=$(hostname -I | awk '{print $1}')"
+```
+
+### Running on the host (uv)
+
+`~` is your user home, so the command above already lands in the right place —
+nothing else to do. Verify:
+
+```bash
+ls ~/.config/xr_teleoperate/   # should list cert.pem and key.pem
+```
+
+### Running inside the Docker container
+
+The container runs as **root**, so `~` is `/root` and `/root/.config` is
+**ephemeral** (wiped when the container is recreated). Pick one:
+
+- **Generate inside the container** (quick, but re-do it after each recreate).
+  Attach (`docker attach simple-sim-1`) and run the same `openssl` command above.
+  If `openssl` is missing: `apt-get update && apt-get install -y openssl`.
+
+- **Persist via a volume** (recommended). Generate the certs on the host, then
+  bind-mount them into the container by adding this to the service volumes in
+  `docker-compose.yml`:
+  ```yaml
+  - type: bind
+    source: ${HOME}/.config/xr_teleoperate
+    target: /root/.config/xr_teleoperate
+  ```
+  Alternatively point the env vars at a path that is already a mounted volume
+  (e.g. under `data/`):
+  ```bash
+  export XR_TELEOP_CERT=/workspace/SIMPLE/data/certs/cert.pem
+  export XR_TELEOP_KEY=/workspace/SIMPLE/data/certs/key.pem
+  ```
+
+### Trust the certificate in the headset
+
+Because it is self-signed, the **first** time you open `https://<PC_IP>:8012` in
+the headset browser you must **accept the security warning**. Otherwise WebXR
+won't connect, no head pose reaches the sim, and the robot never receives valid
+commands.
+
+> **Multi-interface hosts:** if the PC has more than one network interface (or the
+> headset reaches it on a specific subnet, e.g. the robot's `192.168.123.x`), pin
+> the WebSocket endpoint in the URL:
+> ```
+> https://192.168.123.2:8012/?ws=wss://192.168.123.2:8012
+> ```
+> `?ws=wss://<IP>:<port>` tells the Vuer front-end exactly where to open the
+> WebSocket and forces the secure `wss://` scheme (required on an HTTPS page —
+> plain `ws://` is blocked as mixed content). Without it, Vuer guesses the URL from
+> the page host and may pick the wrong interface. It is a per-connection client
+> query parameter, not a server env var.
+
 ## 🥽 VR Teleop Setup
 The following setup process refers to the [GR00T-WholeBodyControl VR Teleop Setup](https://nvlabs.github.io/GR00T-WholeBodyControl/getting_started/vr_teleop_setup.html).
 

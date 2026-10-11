@@ -37,10 +37,30 @@ class ArticulatedAsset:
     # name: str
     usd_path: str   | None
     mjcf_path: str
-    
-    def __init__(self, uid: str, usd_path: str | None, mjcf_path: str) -> None:
+    # Static props (warehouse furniture) ride the articulated path because that's
+    # how MuJoCo attaches a whole MJCF at a frame, but they have ZERO joints.
+    # Isaac Sim must render them as a plain referenced prim + XForm pose instead
+    # of a SingleArticulation (which requires an actual articulation).
+    static: bool
+    # Scale to apply to the USD when referenced into a metres stage. NVIDIA
+    # warehouse assets are authored in centimetres (metersPerUnit = 0.01);
+    # add_reference_to_stage does NOT convert units (only Omniverse's metrics
+    # assembler does, via an `unitsResolve` xformOp), so without this they come
+    # in 100x too large.
+    usd_scale: float
+
+    def __init__(
+        self,
+        uid: str,
+        usd_path: str | None,
+        mjcf_path: str,
+        static: bool = False,
+        usd_scale: float = 1.0,
+    ) -> None:
         self.uid = uid
         self.usd_path = usd_path
         self.mjcf_path = mjcf_path
+        self.static = static
+        self.usd_scale = usd_scale
 
 

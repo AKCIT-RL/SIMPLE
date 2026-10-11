@@ -80,7 +80,7 @@ class BaseDualSim(gym.Env):
         assert not _ISAAC_LOADED, "Isaac already loaded"
         _preload_native_runtime()
         import isaacsim
-        from omni.isaac.kit import SimulationApp # type: ignore
+        from isaacsim import SimulationApp # type: ignore
         from simple.engines.isaac_app import create_simulation_app
 
         # Step 1: Create SimulationApp

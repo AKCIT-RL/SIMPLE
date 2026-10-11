@@ -53,6 +53,34 @@ data/*
 !data/_download.py
 !.env.sample
 
+# -----------------------
+# Recorded episodes & datasets
+# -----------------------
+# Runs write LeRobot-format episodes -- parquet shards plus meta/. They are
+# outputs: large, binary, and reproduced by re-running the task. The exporter
+# also leaves a .git inside each run directory, so committing one records a
+# gitlink to a repository nobody else can fetch.
+#
+# data_test is deliberately NOT blanket-ignored here: the policy at the bottom
+# of this file versions the teleop captures under data_test/teleop_decoupled_wbc
+# while ignoring the rest. A `data_test/` rule at this point would defeat it --
+# excluding a directory stops git descending into it, so the negations down
+# there could never re-include anything.
+datasets/
+
+# Industrial task furniture: the converted meshes ARE versioned (via LFS, see
+# .gitattributes) so users don't have to re-extract them just to run the task.
+# Only the runtime files — *_attach.xml + visual/collision OBJs, ~7 MB. The
+# downloaded source USDs stay out: they're only needed to regenerate, and Isaac
+# references the originals remotely when rendering.
+!data/assets/
+data/assets/*
+!data/assets/industrial/
+data/assets/industrial/*
+!data/assets/industrial/TableTrolley_B02_01/
+!data/assets/industrial/MobileShelvingCart_C05_01/
+data/assets/industrial/*/*.usd
+
 # Sphinx build artifacts
 docs/build/
 docs/source/api/
@@ -84,9 +112,26 @@ third_party/unitree_sim_isaaclab/
 artifacts/
 notes.md
 playgrounds/
+CLAUDE.md
 .test-output/
 typings
 MUJOCO_LOG.TXT
 .claude/*
 .runtime-state/
 .robo-nix/
+docs/teleop_simple_study/*
+!docs/teleop_simple_study/vr_teleop_beginners_guide.md
+media_gen/
+isaac_resources/
+third_party/usd2mjcf/.venv/
+weglog/
+datasets_to_be_converted/
+
+# data_test: only the new teleop capture is versioned, not lazy-downloaded assets.
+# The broad "videos" rule above (and any other generic pattern) still matches
+# nested paths under an un-ignored directory -- re-including the top-level
+# dir isn't enough, every level needs re-including, hence the trailing /**.
+data_test/*
+!data_test/README.md
+!data_test/teleop_decoupled_wbc
+!data_test/teleop_decoupled_wbc/**

@@ -1,5 +1,21 @@
 # Installation
 
+## Prerequisite: check out the submodules
+
+Several dependencies (`gear_sonic`, `decoupled_wbc`, `televuer`, `openpi-client`, …)
+are wired into the environment as editable path dependencies under `third_party/`
+(see `[tool.uv.sources]` in `pyproject.toml`). `uv sync` installs them from those
+local paths, so the submodules **must be checked out first** — otherwise the sync
+fails on the empty directories.
+
+If you cloned without `--recursive`, run this from the repo root:
+```
+git submodule update --init --recursive
+```
+(Cloning fresh? `git clone --recursive <repo>` does it in one step.)
+
+## Set up the environment
+
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/).
 ```
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -32,12 +48,13 @@ CuRobo requires `git-lfs`.
 sudo apt install git-lfs
 ```
 
-Then install [`CUDA`](https://developer.nvidia.com/cuda-12-4-0-download-archive?target_os=Linux). We tested versions `11.8` and `12.4`. Similar versions should also work.
+Then install [`CUDA`](https://developer.nvidia.com/cuda-12-8-0-download-archive?target_os=Linux). We tested versions `12.8` and newer. Similar versions should also work, but the toolkit must support the arch list you compile for.
 
 Now install `CuRobo`, run:
 
 > 💡 Compiling cuda kernels for every compute capability can significantly increase the install time of `CuRobo`, it’s reccommended to set the environment variable `TORCH_CUDA_ARCH_LIST` to the correct computablity according to [offical doc](https://developer.nvidia.com/cuda-gpus)
 > ```
+> export CUDA_HOME=/usr/local/cuda-12.8
 > export TORCH_CUDA_ARCH_LIST=12.0+PTX # for 5090 etc., 
 > # export TORCH_CUDA_ARCH_LIST=8.9+PTX # for 4090 etc., 
 > ```

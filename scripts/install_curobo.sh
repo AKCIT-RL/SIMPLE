@@ -20,6 +20,28 @@ fi
 export VIRTUAL_ENV="${UV_PROJECT_ENVIRONMENT}"
 export PATH="${UV_PROJECT_ENVIRONMENT}/bin:${PATH}"
 
+CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
+export CUDA_HOME
+
+NVCC_BIN="${CUDA_HOME}/bin/nvcc"
+if [[ ! -x "$NVCC_BIN" ]]; then
+  NVCC_BIN="$(command -v nvcc || true)"
+fi
+
+detect_nvcc_version() {
+  local nvcc_path="$1"
+  if [[ -z "$nvcc_path" || ! -x "$nvcc_path" ]]; then
+    return 1
+  fi
+
+  "$nvcc_path" --version | sed -n 's/.*release \([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' | head -n 1
+}
+
+nvcc_version="$(detect_nvcc_version "$NVCC_BIN" || true)"
+if [[ -n "$nvcc_version" ]]; then
+  echo "[install_curobo] using nvcc $nvcc_version from ${NVCC_BIN%/bin/nvcc}"
+fi
+
 if [[ ! -d "$ROOT_DIR/third_party/curobo" ]]; then
   echo "[install_curobo] missing third_party/curobo"
   echo "[install_curobo] run: git submodule update --init --recursive"
@@ -52,6 +74,15 @@ else:
 PY
 )"
   export TORCH_CUDA_ARCH_LIST
+fi
+
+if [[ "$TORCH_CUDA_ARCH_LIST" == 12.0* && -n "$nvcc_version" ]]; then
+  if [[ "$(printf '%s\n%s\n' "12.8" "$nvcc_version" | sort -V | head -n 1)" != "12.8" ]]; then
+    echo "[install_curobo] TORCH_CUDA_ARCH_LIST=$TORCH_CUDA_ARCH_LIST requires CUDA toolkit 12.8+"
+    echo "[install_curobo] detected nvcc $nvcc_version at ${NVCC_BIN%/bin/nvcc}"
+    echo "[install_curobo] install CUDA 12.8+ and set CUDA_HOME/PATH to that toolkit before rerunning"
+    exit 1
+  fi
 fi
 
 echo "[install_curobo] using TORCH_CUDA_ARCH_LIST=$TORCH_CUDA_ARCH_LIST"

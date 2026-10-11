@@ -6,6 +6,7 @@ Licensed under the terms in LICENSE file.
 """
 
 from .base_agent import BaseAgent
+from .vuer_decoupled_agent import VuerDecoupledAgent
 # from .openvla_agent import OpenvlaAgent
 # from .octo_agent import OctoAgent
 # from .act_agent import ActAgent

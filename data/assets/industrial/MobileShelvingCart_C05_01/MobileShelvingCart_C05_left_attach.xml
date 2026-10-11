@@ -1,0 +1,107 @@
+<mujoco model="MobileShelvingCart_C05_left">
+  <compiler meshdir="." angle="radian"/>
+  <asset>
+  <mesh name="MobileShelvingCart_C05_left_vis" file="visuals/MobileShelvingCart_C05_01.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_0" file="collision/MobileShelvingCart_C05_01_col_0.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_1" file="collision/MobileShelvingCart_C05_01_col_1.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_2" file="collision/MobileShelvingCart_C05_01_col_2.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_3" file="collision/MobileShelvingCart_C05_01_col_3.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_4" file="collision/MobileShelvingCart_C05_01_col_4.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_5" file="collision/MobileShelvingCart_C05_01_col_5.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_6" file="collision/MobileShelvingCart_C05_01_col_6.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_7" file="collision/MobileShelvingCart_C05_01_col_7.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_8" file="collision/MobileShelvingCart_C05_01_col_8.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_9" file="collision/MobileShelvingCart_C05_01_col_9.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_10" file="collision/MobileShelvingCart_C05_01_col_10.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_11" file="collision/MobileShelvingCart_C05_01_col_11.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_12" file="collision/MobileShelvingCart_C05_01_col_12.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_13" file="collision/MobileShelvingCart_C05_01_col_13.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_14" file="collision/MobileShelvingCart_C05_01_col_14.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_15" file="collision/MobileShelvingCart_C05_01_col_15.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_16" file="collision/MobileShelvingCart_C05_01_col_16.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_17" file="collision/MobileShelvingCart_C05_01_col_17.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_18" file="collision/MobileShelvingCart_C05_01_col_18.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_19" file="collision/MobileShelvingCart_C05_01_col_19.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_20" file="collision/MobileShelvingCart_C05_01_col_20.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_21" file="collision/MobileShelvingCart_C05_01_col_21.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_22" file="collision/MobileShelvingCart_C05_01_col_22.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_23" file="collision/MobileShelvingCart_C05_01_col_23.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_24" file="collision/MobileShelvingCart_C05_01_col_24.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_25" file="collision/MobileShelvingCart_C05_01_col_25.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_26" file="collision/MobileShelvingCart_C05_01_col_26.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_27" file="collision/MobileShelvingCart_C05_01_col_27.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_28" file="collision/MobileShelvingCart_C05_01_col_28.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_29" file="collision/MobileShelvingCart_C05_01_col_29.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_30" file="collision/MobileShelvingCart_C05_01_col_30.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_31" file="collision/MobileShelvingCart_C05_01_col_31.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_32" file="collision/MobileShelvingCart_C05_01_col_32.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_33" file="collision/MobileShelvingCart_C05_01_col_33.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_34" file="collision/MobileShelvingCart_C05_01_col_34.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_35" file="collision/MobileShelvingCart_C05_01_col_35.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_36" file="collision/MobileShelvingCart_C05_01_col_36.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_37" file="collision/MobileShelvingCart_C05_01_col_37.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_38" file="collision/MobileShelvingCart_C05_01_col_38.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_39" file="collision/MobileShelvingCart_C05_01_col_39.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_40" file="collision/MobileShelvingCart_C05_01_col_40.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_41" file="collision/MobileShelvingCart_C05_01_col_41.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_42" file="collision/MobileShelvingCart_C05_01_col_42.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_43" file="collision/MobileShelvingCart_C05_01_col_43.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_44" file="collision/MobileShelvingCart_C05_01_col_44.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_45" file="collision/MobileShelvingCart_C05_01_col_45.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_46" file="collision/MobileShelvingCart_C05_01_col_46.obj"/>
+  <mesh name="MobileShelvingCart_C05_left_col_47" file="collision/MobileShelvingCart_C05_01_col_47.obj"/>
+  </asset>
+  <worldbody>
+    <body name="MobileShelvingCart_C05_left">
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_0" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_1" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_2" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_3" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_4" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_5" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_6" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_7" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_8" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_9" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_10" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_11" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_12" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_13" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_14" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_15" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_16" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_17" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_18" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_19" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_20" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_21" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_22" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_23" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_24" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_25" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_26" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_27" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_28" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_29" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_30" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_31" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_32" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_33" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_34" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_35" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_36" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_37" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_38" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_39" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_40" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_41" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_42" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_43" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_44" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_45" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_46" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_col_47" group="3" condim="3" friction="1 0.02 0.001"/>
+      <geom type="mesh" mesh="MobileShelvingCart_C05_left_vis" group="1" contype="0" conaffinity="0"/>
+    </body>
+  </worldbody>
+</mujoco>

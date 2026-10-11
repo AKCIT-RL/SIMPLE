@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     # from simple.core.asset import Asset
     # from simple.core.actor import Actor
     from simple.core.task import Task
-    from simple.core.actor import RobotActor, ObjectActor, CameraEntity, ArticulatedObjectActor
+    from simple.core.actor import RobotActor, ObjectActor, CameraEntity, ArticulatedObjectActor, StaticObjectActor
     from simple.assets.primitive import Primitive # , Box
     # from simple.sensors.config import CameraCfg
     
@@ -102,7 +102,12 @@ class MujocoSimulator(Simulator):
         # joint_state = np.array([joint.qpos[0] for joint in self.joints])
         joint_state = self.task.robot.get_robot_qpos()
         robot_position = np.round(self.mjData.qpos[:7], 4)
-        if self.articulated_object_joints is not None:
+        # Only real articulated objects expose `articulate_*` joints/bodies.
+        # Static furniture also rides the articulated actor path (0 joints), which
+        # leaves this list EMPTY but not None — the old `is not None` check then
+        # fell through to `mjData.body("articulate_base")` and raised
+        # "Invalid name 'articulate_base'". Same guard as _setup_scene.
+        if self.articulated_object_joints:
             articulated_joints_state = {}
             for articulate_joint in self.articulated_object_joints:
                 # articulated_joints_state[articulate_joint] = self.mjData.joint(articulate_joint).qpos[0]
@@ -127,7 +132,7 @@ class MujocoSimulator(Simulator):
 
 
     def _setup_scene(self, **kwargs):
-        from simple.core.actor import RobotActor, ObjectActor, ArticulatedObjectActor, CameraEntity
+        from simple.core.actor import RobotActor, ObjectActor, ArticulatedObjectActor, CameraEntity, StaticObjectActor
         from simple.assets.primitive import Primitive
 
         # https://mujoco.readthedocs.io/en/stable/computation/index.html
@@ -138,9 +143,34 @@ class MujocoSimulator(Simulator):
         mjSpec.option.integrator = mujoco.mjtIntegrator.mjINT_IMPLICITFAST
         mjSpec.option.cone = mujoco.mjtCone.mjCONE_ELLIPTIC
         mjSpec.option.noslip_iterations = 2
+        # Arena for contacts/constraints. MuJoCo's automatic estimate is sized
+        # from a heuristic and overflows ("Insufficient arena memory for the
+        # number of constraints generated" -> segfault) on scenes that combine
+        # mesh-collision furniture with many convex-hull objects (e.g. the
+        # industrial sorting task: 3 furniture pieces + 2 totes + up to 8 parts,
+        # 16 hulls each). 256 MB is ample and costs only address space.
+        mjSpec.memory = 256 * 1024 * 1024
         
         mj_worldbody = mjSpec.worldbody
-        
+
+        # Body/mesh/geom names default to the asset's label/uid for readability
+        # and backward compatibility with tooling that expects e.g. "bin_b04".
+        # That collides when multiple instances of the *same* asset are placed
+        # by the same task (target_group/shelf_group, e.g. several "toteweg"
+        # instances) -- only those duplicated labels get an "_{objtype}" suffix
+        # (objtype is the actor's layout key, e.g. "target_0", always unique),
+        # so every pre-existing single-instance task keeps its exact prior
+        # naming untouched.
+        from collections import Counter
+        label_counts = Counter()
+        for _objtype, _actor in self.task.layout.actors.items():
+            if isinstance(_actor, (ObjectActor, StaticObjectActor)):
+                _label = _actor.asset.uid
+                if isinstance(_actor.asset, SemanticAnnotated):
+                    _label = _actor.asset.label
+                label_counts[_label] += 1
+        self._dup_object_labels = {lbl for lbl, count in label_counts.items() if count > 1}
+
         mj_worldbody.add_light(
             # type="directional_light",
             pos=[0, 0, 1.5], 
@@ -151,11 +181,13 @@ class MujocoSimulator(Simulator):
         )
 
         for objtype, actor in self.task.layout.actors.items():
-            if isinstance(actor, ObjectActor):
+            if isinstance(actor, StaticObjectActor):
+                self._build_static_object(mjSpec, mj_worldbody, actor, objtype)
+            elif isinstance(actor, ObjectActor):
                 # This is a string, which means it's a name of an asset
                 # asset = self.task.layout.assets[actor]
                 # actor = Actor.from_asset(asset)
-                self._build_object(mjSpec, mj_worldbody, actor)
+                self._build_object(mjSpec, mj_worldbody, actor, objtype)
             elif isinstance(actor, RobotActor):
                 self._build_robot(mjSpec, mj_worldbody, actor) # HACK make sure called first
             elif isinstance(actor, Primitive):
@@ -218,7 +250,8 @@ class MujocoSimulator(Simulator):
                     uid = actor.asset.uid
                 # mj_obj=physics.data.body(f"{label}")
                 # mj_obj.xfrc_applied = pseudo_gravity
-                mj_obj=self.mjData.body(f"{label}")
+                body_name = f"{label}_{objtype}" if label in self._dup_object_labels else label
+                mj_obj=self.mjData.body(body_name)
                 if objtype == "container":
                     gravity= pseudo_gravity.copy()
                     gravity[2] = -9.81*1
@@ -226,7 +259,15 @@ class MujocoSimulator(Simulator):
                 else:
                     mj_obj.xfrc_applied = pseudo_gravity
                 mj_objects[objtype] = mj_obj
-                obj_names.append(label)
+                # Disambiguated body_name, not the bare label -- consumed by
+                # IsaacSimSimulator.sync_states, which zips this against
+                # obj_positions/obj_orientations and does
+                # self.objects[obj_name] to pick which Isaac prim to move.
+                # With several same-asset instances (e.g. multiple bin_b04
+                # totes), the bare label collides across all of them; Isaac's
+                # object keys are now disambiguated the same way (see
+                # update_layout's dup_labels), so this must match.
+                obj_names.append(body_name)
 
         self.mj_objects = mj_objects
         self.obj_names = obj_names
@@ -239,7 +280,11 @@ class MujocoSimulator(Simulator):
         self.joints, self.actuators=self.task.robot.setup_control(self.mjData, self.mjModel, mjSpec=self.mjSpec)
         
         
-        if self.articulated_object_joints is not None:
+        # Only initialise articulate joints when the scene actually has an
+        # articulated object with joints under the canonical "articulated" key.
+        # Static furniture is also attached via the articulated path (0 joints,
+        # keyed "furniture_*"), so guard against assuming an "articulated" actor.
+        if self.articulated_object_joints and "articulated" in self.task.layout.actors:
             articulate_joint_qpos = self.task.layout.actors["articulated"].asset.articulate_init_joint_qpos
             if articulate_joint_qpos is not None:
                 for joint_name, qpos in articulate_joint_qpos.items():
@@ -281,7 +326,7 @@ class MujocoSimulator(Simulator):
         # ?. reset render step
         self.render_step = 0
 
-    def _build_object(self, mjSpec, mjWorld, actor: ObjectActor):
+    def _build_object(self, mjSpec, mjWorld, actor: ObjectActor, objtype: str):
         # asset_id = actor.asset.uid
 
         # TODO primitive types
@@ -294,37 +339,103 @@ class MujocoSimulator(Simulator):
             label = actor.asset.label
             name = actor.asset.name
 
+        body_name = f"{label}_{objtype}" if label in self._dup_object_labels else label
+
         for i in range(num_convex):
             mjSpec.add_mesh(
-                name=f'{label}_mesh_convex{i}', 
+                name=f'{body_name}_mesh_convex{i}',
                 file=collision_meshes[i],
             )
 
         mj_obj=mjWorld.add_body(
-            name=label, 
-            pos=actor.pose.position, 
+            name=body_name,
+            pos=actor.pose.position,
             quat=actor.pose.quaternion)
 
 
         num_convex = len(collision_meshes)
         for i in range(num_convex):
             mj_obj.add_geom(
-                name=f"{label}_convex_{i}", 
-                meshname=f"{label}_mesh_convex{i}", 
+                name=f"{body_name}_convex_{i}",
+                meshname=f"{body_name}_mesh_convex{i}",
                 type=mujoco.mjtGeom.mjGEOM_MESH,
-                # opposing slip in the tangent plane, rotation around the contact normal 
+                # opposing slip in the tangent plane, rotation around the contact normal
                 # and rotation around the two axes of the tangent plane
-                condim=4,  
+                condim=4,
                 # total mass 0.1 helps preventing slipping
-                mass=0.1/num_convex, 
+                mass=0.1/num_convex,
                 # rubber on rough ground: large static, sliding and torisonal friction
-                friction=[0.8, 0.05, 0.005],  
-                rgba=[1, 1, 1, 1],
+                friction=[0.8, 0.05, 0.005],
+                # Per-actor / per-asset tint, default plain white. actor.rgba is
+                # the weg target-tote highlight (set per episode on the one tote
+                # the robot must deliver); actor.asset.rgba is a color variant
+                # baked into the asset (e.g. bin_b04_red / bin_b04_blue in the
+                # sorting task). The two never apply to the same object, so try
+                # the actor override first, then the asset variant.
+                rgba=(
+                    getattr(actor, "rgba", None)
+                    or getattr(actor.asset, "rgba", None)
+                    or [1, 1, 1, 1]
+                ),
+                # Padding/placeholder instances opt out of collision entirely.
+                # They are parked below the floor to keep a constant object count
+                # in the recorded observations, but the ground plane is an
+                # INFINITE half-space, so a colliding body parked under it is
+                # deeply penetrating and gets ejected upward at ~140 m/s straight
+                # through the workspace.
+                contype=0 if getattr(actor.asset, "no_collision", False) else 1,
+                conaffinity=0 if getattr(actor.asset, "no_collision", False) else 1,
+                # Optional contact-detection margin. Set margin==gap so near
+                # contacts (up to `contact_margin`) are *reported* in mjData.contact
+                # without producing any force (the gap zone is force-free), leaving
+                # the physics identical. Used so a tote resting a couple mm above a
+                # shelf's convex-hull collision surface still registers as "on the
+                # shelf" for the reward/success predicate. Default 0.0 => unchanged.
+                margin=getattr(actor.asset, "contact_margin", 0.0),
+                gap=getattr(actor.asset, "contact_margin", 0.0),
                 # stiff contact and no oscillation
                 solref = [0.005, 2]
             )
-        mj_obj.add_freejoint(name=f'{label}_joint')
-    
+        mj_obj.add_freejoint(name=f'{body_name}_joint')
+
+    def _build_static_object(self, mjSpec, mjWorld, actor: StaticObjectActor, objtype: str):
+        """Identical to _build_object, except the body is left fixed to the
+        world (no free joint) -- for immovable scenario geometry that still
+        needs real MuJoCo collision, e.g. a shelf unit."""
+        collision_meshes = actor.asset.collision_meshes_mujoco
+        num_convex = len(collision_meshes)
+
+        label = actor.asset.uid
+        name = actor.asset.uid
+        if isinstance(actor.asset, SemanticAnnotated):
+            label = actor.asset.label
+            name = actor.asset.name
+
+        body_name = f"{label}_{objtype}" if label in self._dup_object_labels else label
+
+        for i in range(num_convex):
+            mjSpec.add_mesh(
+                name=f'{body_name}_mesh_convex{i}',
+                file=collision_meshes[i],
+            )
+
+        mj_obj = mjWorld.add_body(
+            name=body_name,
+            pos=actor.pose.position,
+            quat=actor.pose.quaternion)
+
+        for i in range(num_convex):
+            mj_obj.add_geom(
+                name=f"{body_name}_convex_{i}",
+                meshname=f"{body_name}_mesh_convex{i}",
+                type=mujoco.mjtGeom.mjGEOM_MESH,
+                condim=4,
+                friction=[0.8, 0.05, 0.005],
+                rgba=[1, 1, 1, 1],
+                solref=[0.005, 2],
+            )
+        # deliberately no add_freejoint(): this body stays welded to the world.
+
     def _build_articulated_object(self, mjSpec, mjWorld, actor: ArticulatedObjectActor):
         """Build the articulated object in the Mujoco simulator."""
         articulated_object_mjcf = mujoco.MjSpec.from_file(resolve_data_path(actor.asset.mjcf_path, auto_download=True))
@@ -555,6 +666,24 @@ class MujocoSimulator(Simulator):
             self.joints[joint_name].qvel = 0
             self.joints[joint_name].qacc = 0
 
+    def mj_body_name(self, objtype: str) -> str:
+        """MuJoCo body name for a layout actor key (e.g. "target_0"),
+        mirroring the duplicate-label disambiguation applied in
+        _setup_scene/_build_object (self._dup_object_labels): bare asset
+        label unless multiple live actors share it, in which case
+        f"{label}_{objtype}". External callers that need to address a
+        specific object's MuJoCo body/joint by name (e.g. replay scripts
+        restoring recorded object poses) must go through this rather than
+        assuming the bare asset label -- with several same-asset instances
+        (e.g. multiple "bin_b04" totes, or the industrial sorting task's
+        screw/screwdriver copies), the bare label is ambiguous/missing.
+        """
+        actor = self.task.layout.actors[objtype]
+        label = actor.asset.uid
+        if isinstance(actor.asset, SemanticAnnotated):
+            label = actor.asset.label
+        return f"{label}_{objtype}" if label in self._dup_object_labels else label
+
     def set_object_poses(self, obj_names, obj_positions, obj_orientations):
         for _, (name, p, q) in enumerate(zip(obj_names, obj_positions, obj_orientations)):
             self.mjData.joint(f"{name}_joint").qpos = np.concatenate([p, q], axis=0)
@@ -566,9 +695,15 @@ class MujocoSimulator(Simulator):
         excluded_geom_names = {"ground"}
         excluded_body_names = {"world"}
 
+        dup_object_labels = getattr(self, "_dup_object_labels", set())
         for actor_name, actor in self.task.layout.actors.items():
             if isinstance(actor, ObjectActor):
                 excluded_body_names.add(actor.asset.uid)
+                obj_label = actor.asset.label if isinstance(actor.asset, SemanticAnnotated) else actor.asset.uid
+                if obj_label in dup_object_labels:
+                    excluded_body_names.add(f"{obj_label}_{actor_name}")
+                else:
+                    excluded_body_names.add(obj_label)
             elif isinstance(actor, Primitive):
                 excluded_body_names.add(actor_name)
                 excluded_geom_names.add(f"{actor_name}_geom")

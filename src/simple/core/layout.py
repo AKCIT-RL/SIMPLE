@@ -58,6 +58,12 @@ class Layout:
         
         self.actors[name] = ObjectActor(asset=obj) #ActorReigstry.make("object", obj) #Actor.from_asset(obj)
 
+    def add_static_object(self, name: str, obj: Asset) -> None:
+        if name in self.actors:
+            raise ValueError(f"Actor with name '{name}' already exists in the layout.")
+
+        self.actors[name] = StaticObjectActor(asset=obj)
+
     def add_articulated_object(self, name: str, obj: ArticulatedAsset) -> None:
         if name in self.actors:
             raise ValueError(f"Actor with name '{name}' already exists in the layout.")
@@ -140,12 +146,12 @@ class Layout:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert the layout to a dictionary representation."""
-        test = self.actors["target"].to_dict()  # CHECK
+        scene = getattr(self, "scene", None)
         layout_dict = {
-            "actors": {name: actor.to_dict() for name, actor in self.actors.items() if name != "robot"}, # CHECK 
+            "actors": {name: actor.to_dict() for name, actor in self.actors.items() if name != "robot"},
             "lights": [light.to_dict() for light in self.lights],
             "cameras": {cam_id: cam.to_dict() for cam_id, cam in self.cameras.items()},
-            "scene": self.scene.to_dict(),
+            "scene": scene.to_dict() if scene is not None else None,
             "scene_info": self.scene_info,
         }
         return layout_dict
